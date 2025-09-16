@@ -1,0 +1,136 @@
+name: Integration Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-deployment:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Generate unique test name
+        id: test-name
+        run: |
+          # Create unique name with GitHub run number
+          TEST_NAME="mautic-test-${{ github.run_number }}"
+          echo "test-name=$TEST_NAME" >> $GITHUB_OUTPUT
+          echo "🏷️ Test VPS name: $TEST_NAME"
+        
+      - name: Deploy Mautic (Test Action)
+        id: deploy
+        uses: ./
+        with:
+          vps-name: ${{ steps.test-name.outputs.test-name }}
+          vps-size: 's-1vcpu-1gb'
+          vps-region: 'nyc1'
+          email: 'test@mautic-test.local'
+          mautic-password: ${{ secrets.TEST_MAUTIC_PASSWORD }}
+          mysql-password: ${{ secrets.TEST_MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
+          digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+          
+      - name: Validate deployment
+        run: |
+          echo "🔍 Validating deployment..."
+          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
+          MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
+          
+          echo "VPS IP: $VPS_IP"
+          echo "Mautic URL: $MAUTIC_URL"
+          
+          # Wait for Mautic to be fully ready
+          echo "⏳ Waiting for Mautic to be ready..."
+          sleep 120
+          
+          # Test HTTP response
+          for i in {1..10}; do
+            echo "Attempt $i: Testing HTTP response..."
+            if curl -f -s --max-time 30 "$MAUTIC_URL" > /dev/null; then
+              echo "✅ Mautic is responding"
+              break
+            else
+              echo "⏳ Waiting 30 seconds before retry..."
+              sleep 30
+            fi
+            
+            if [ $i -eq 10 ]; then
+              echo "❌ Mautic failed to respond after 10 attempts"
+              exit 1
+            fi
+          done
+          
+          # Test that it's actually Mautic (not just nginx)
+          RESPONSE=$(curl -s --max-time 30 "$MAUTIC_URL" || echo "")
+          if echo "$RESPONSE" | grep -i "mautic" > /dev/null; then
+            echo "✅ Confirmed Mautic is running"
+          else
+            echo "❌ Response doesn't contain 'mautic'"
+            echo "Response preview: ${RESPONSE:0:200}..."
+            exit 1
+          fi
+          
+      - name: Test SSH access
+        run: |
+          echo "🔐 Testing SSH access..."
+          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
+          
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Test SSH and Docker status
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@$VPS_IP << 'EOF'
+            echo "✅ SSH connection successful"
+            
+            # Check Docker containers
+            echo "🐳 Checking Docker containers..."
+            docker-compose ps
+            
+            # Check Mautic logs
+            echo "📋 Recent Mautic logs:"
+            docker-compose logs --tail=20 mautic
+            
+            # Check disk usage
+            echo "💾 Disk usage:"
+            df -h
+          EOF
+          
+          # Cleanup SSH key
+          rm -f ~/.ssh/id_rsa
+          
+      - name: Cleanup test droplet
+        if: always()
+        run: |
+          echo "🧹 Cleaning up test droplet..."
+          TEST_NAME="${{ steps.test-name.outputs.test-name }}"
+          
+          # Install doctl
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_TOKEN }}"
+          
+          # Delete the test droplet
+          if doctl compute droplet list | grep -q "$TEST_NAME"; then
+            echo "Deleting droplet: $TEST_NAME"
+            doctl compute droplet delete "$TEST_NAME" --force
+            echo "✅ Test droplet deleted"
+          else
+            echo "ℹ️ Test droplet not found (may have failed to create)"
+          fi
+          
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: |
+            ${{ steps.deploy.outputs.deployment-log }}
+          retention-days: 7
