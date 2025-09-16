@@ -1,0 +1,38 @@
+name: Deploy Mautic to DigitalOcean
+
+on:
+  workflow_dispatch:
+    inputs:
+      vps_name:
+        description: 'VPS Name'
+        required: true
+        default: 'mautic-server'
+      domain:
+        description: 'Domain (optional - leave empty to use IP)'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy Mautic
+        uses: escopecz/mautic-deploy-action@v1
+        with:
+          vps-name: ${{ inputs.vps_name }}
+          vps-size: 's-2vcpu-2gb'
+          vps-region: 'nyc1'
+          domain: ${{ inputs.domain }}
+          email: 'admin@example.com'
+          mautic-version: '6.0.5-apache'
+          mautic-password: ${{ secrets.MAUTIC_PASSWORD }}
+          mysql-password: ${{ secrets.MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          do-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+        
+      - name: Show deployment results
+        run: |
+          echo "VPS IP: ${{ steps.deploy.outputs.vps-ip }}"
+          echo "Mautic URL: ${{ steps.deploy.outputs.mautic-url }}"

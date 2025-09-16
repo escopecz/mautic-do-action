@@ -1,0 +1,67 @@
+name: Advanced Mautic Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Deploy Mautic with Custom Themes and Plugins
+        uses: escopecz/mautic-deploy-action@v1
+        with:
+          vps-name: 'mautic-${{ inputs.environment }}'
+          vps-size: 's-4vcpu-8gb'
+          vps-region: 'fra1'
+          domain: ${{ vars.DOMAIN_NAME }}
+          email: ${{ vars.ADMIN_EMAIL }}
+          mautic-version: '6.0.5-apache'
+          mautic-port: '8001'
+          
+          # Custom themes (Packagist packages)
+          themes: |
+            vendor/premium-theme:^1.0
+            company/corporate-theme:dev-main
+          
+          # Custom plugins (Packagist packages)  
+          plugins: |
+            vendor/analytics-plugin:^2.0
+            company/crm-integration:^1.5
+          
+          # Database configuration
+          mysql-database: 'mautic_${{ inputs.environment }}'
+          mysql-user: 'mautic_user'
+          
+          # Secrets
+          mautic-password: ${{ secrets.MAUTIC_PASSWORD }}
+          mysql-password: ${{ secrets.MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          do-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+        
+      - name: Upload deployment log
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-log-${{ inputs.environment }}
+          path: ${{ steps.deploy.outputs.deployment-log }}
+          
+      - name: Notify deployment success
+        run: |
+          echo "✅ Mautic deployed successfully!"
+          echo "🌐 URL: ${{ steps.deploy.outputs.mautic-url }}"
+          echo "🖥️  VPS IP: ${{ steps.deploy.outputs.vps-ip }}"
+          
+          # You could add Slack/Discord notifications here

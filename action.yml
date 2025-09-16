@@ -1,0 +1,188 @@
+name: 'Deploy Mautic to DigitalOcean'
+description: 'Deploy Mautic 6 with Docker Compose to a DigitalOcean VPS with automated SSL and monitoring'
+author: 'escopecz'
+
+branding:
+  icon: 'cloud'
+  color: 'blue'
+
+inputs:
+  # DigitalOcean Configuration
+  digitalocean-token:
+    description: 'DigitalOcean API access token'
+    required: true
+  ssh-private-key:
+    description: 'SSH private key for VPS access'
+    required: true
+  ssh-fingerprint:
+    description: 'DigitalOcean SSH key fingerprint'
+    required: true
+  
+  # Mautic Configuration
+  email:
+    description: 'Admin email address for Mautic and SSL certificates'
+    required: true
+  mautic-password:
+    description: 'Admin password for Mautic'
+    required: true
+  mautic-version:
+    description: 'Mautic Docker image version'
+    required: false
+    default: '6.0.5-apache'
+  
+  # Optional Configuration
+  domain:
+    description: 'Domain name for your Mautic instance (optional, will use IP if not provided)'
+    required: false
+  vps-name:
+    description: 'Name for the DigitalOcean droplet'
+    required: false
+    default: 'mautic-vps'
+  vps-size:
+    description: 'DigitalOcean droplet size'
+    required: false
+    default: 's-1vcpu-1gb'
+    type: choice
+    options:
+      - 's-1vcpu-1gb'
+      - 's-1vcpu-2gb'
+      - 's-2vcpu-2gb'
+      - 's-2vcpu-4gb'
+      - 's-4vcpu-8gb'
+      - 's-8vcpu-16gb'
+      - 'c-2'
+      - 'c-4'
+      - 'c-8'
+  vps-region:
+    description: 'DigitalOcean region'
+    required: false
+    default: 'nyc1'
+    type: choice
+    options:
+      - 'nyc1'
+      - 'nyc3'
+      - 'ams3'
+      - 'fra1'
+      - 'lon1'
+      - 'sgp1'
+      - 'tor1'
+      - 'sfo3'
+      - 'blr1'
+      - 'syd1'
+  
+  # Mautic Packages
+  themes:
+    description: |
+      List of Mautic theme packages from Packagist (one per line):
+      vendor/theme-name:^1.0
+      another-vendor/custom-theme:dev-main
+    required: false
+    type: string
+  plugins:
+    description: |
+      List of Mautic plugin packages from Packagist (one per line):
+      vendor/plugin-name:^2.0
+      another-vendor/custom-plugin:^1.5
+    required: false
+    type: string
+  
+  # Database Configuration
+  mysql-database:
+    description: 'MySQL database name'
+    required: false
+    default: 'mautic_db'
+  mysql-user:
+    description: 'MySQL user name'
+    required: false
+    default: 'mautic_db_user'
+  mysql-password:
+    description: 'MySQL password'
+    required: false
+    default: 'mautic_db_pwd'
+  mysql-root-password:
+    description: 'MySQL root password'
+    required: false
+    default: 'changeme'
+
+outputs:
+  vps-ip:
+    description: 'IP address of the created VPS'
+  mautic-url:
+    description: 'URL to access your Mautic instance'
+  deployment-log:
+    description: 'Path to the deployment log artifact'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating required inputs..."
+        
+        if [ -z "${{ inputs.digitalocean-token }}" ]; then
+          echo "❌ Error: digitalocean-token is required"
+          exit 1
+        fi
+        
+        if [ -z "${{ inputs.ssh-private-key }}" ]; then
+          echo "❌ Error: ssh-private-key is required"
+          exit 1
+        fi
+        
+        if [ -z "${{ inputs.ssh-fingerprint }}" ]; then
+          echo "❌ Error: ssh-fingerprint is required"
+          exit 1
+        fi
+        
+        if [ -z "${{ inputs.email }}" ]; then
+          echo "❌ Error: email is required"
+          exit 1
+        fi
+        
+        if [ -z "${{ inputs.mautic-password }}" ]; then
+          echo "❌ Error: mautic-password is required"
+          exit 1
+        fi
+        
+        # Validate email format
+        if ! echo "${{ inputs.email }}" | grep -E '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' > /dev/null; then
+          echo "❌ Error: Invalid email format"
+          exit 1
+        fi
+        
+        echo "✅ All required inputs validated"
+
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ inputs.digitalocean-token }}
+
+    - name: Create and configure VPS
+      shell: bash
+      run: ${{ github.action_path }}/scripts/deploy.sh
+      env:
+        INPUT_DIGITALOCEAN_TOKEN: ${{ inputs.digitalocean-token }}
+        INPUT_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+        INPUT_SSH_FINGERPRINT: ${{ inputs.ssh-fingerprint }}
+        INPUT_EMAIL: ${{ inputs.email }}
+        INPUT_MAUTIC_PASSWORD: ${{ inputs.mautic-password }}
+        INPUT_MAUTIC_VERSION: ${{ inputs.mautic-version }}
+        INPUT_DOMAIN: ${{ inputs.domain }}
+        INPUT_VPS_NAME: ${{ inputs.vps-name }}
+        INPUT_VPS_SIZE: ${{ inputs.vps-size }}
+        INPUT_VPS_REGION: ${{ inputs.vps-region }}
+        INPUT_THEMES: ${{ inputs.themes }}
+        INPUT_PLUGINS: ${{ inputs.plugins }}
+        INPUT_MYSQL_DATABASE: ${{ inputs.mysql-database }}
+        INPUT_MYSQL_USER: ${{ inputs.mysql-user }}
+        INPUT_MYSQL_PASSWORD: ${{ inputs.mysql-password }}
+        INPUT_MYSQL_ROOT_PASSWORD: ${{ inputs.mysql-root-password }}
+        ACTION_PATH: ${{ github.action_path }}
+
+    - name: Upload deployment log
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: mautic-deployment-log
+        path: ./setup-dc.log

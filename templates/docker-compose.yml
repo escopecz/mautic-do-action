@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mautic_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - mautic
+
+  mautic:
+    image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
+    container_name: mautic_app
+    depends_on:
+      - mysql
+    ports:
+      - "${PORT:-8001}:80"
+    environment:
+      - MAUTIC_DB_HOST=mysql
+      - MAUTIC_DB_USER=${MYSQL_USER}
+      - MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
+      - MAUTIC_DB_NAME=${MYSQL_DATABASE}
+      - MAUTIC_ADMIN_EMAIL=${EMAIL_ADDRESS}
+      - MAUTIC_ADMIN_PASSWORD=${MAUTIC_PASSWORD}
+      - MAUTIC_ADMIN_FIRSTNAME=Admin
+      - MAUTIC_ADMIN_LASTNAME=User
+      - MAUTIC_TRUSTED_PROXIES=0.0.0.0/0
+    volumes:
+      - ./mautic_data:/var/www/html
+      - ./logs:/var/www/html/var/logs
+    restart: unless-stopped
+    networks:
+      - mautic
+
+  # Mautic worker for background processing
+  mautic_worker:
+    image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
+    container_name: mautic_worker
+    depends_on:
+      - mysql
+      - mautic
+    environment:
+      - MAUTIC_DB_HOST=mysql
+      - MAUTIC_DB_USER=${MYSQL_USER}
+      - MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
+      - MAUTIC_DB_NAME=${MYSQL_DATABASE}
+    volumes:
+      - ./mautic_data:/var/www/html
+      - ./logs:/var/www/html/var/logs
+    command: php /var/www/html/bin/console messenger:consume email async priority normal --limit=10 --memory-limit=512M
+    restart: unless-stopped
+    networks:
+      - mautic
+
+networks:
+  mautic:
+    driver: bridge

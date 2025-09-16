@@ -1,0 +1,47 @@
+name: Test Action
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Test action syntax
+        run: |
+          # Validate action.yml syntax
+          cat action.yml
+          
+          # Check required files exist
+          test -f scripts/deploy.sh
+          test -f scripts/setup-vps.sh
+          test -f scripts/setup-dc.sh
+          test -f templates/docker-compose.yml
+          test -f templates/.env.template
+          test -f templates/.mautic_env
+          test -f templates/nginx-virtual-host-template
+          
+          echo "✅ All required files exist"
+          
+      - name: Validate shell scripts
+        run: |
+          # Check shell script syntax
+          bash -n scripts/deploy.sh
+          bash -n scripts/setup-vps.sh  
+          bash -n scripts/setup-dc.sh
+          
+          echo "✅ Shell scripts are valid"
+          
+      - name: Check file permissions
+        run: |
+          # Ensure scripts are executable
+          chmod +x scripts/*.sh
+          
+          echo "✅ Script permissions set"

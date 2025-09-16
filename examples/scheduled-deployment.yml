@@ -1,0 +1,43 @@
+name: Scheduled Mautic Deployment
+
+on:
+  schedule:
+    # Deploy every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy Latest Mautic
+        uses: escopecz/mautic-deploy-action@v1
+        with:
+          vps-name: 'mautic-auto-${{ github.run_number }}'
+          vps-size: 's-2vcpu-4gb'
+          vps-region: 'nyc3'
+          domain: 'auto.mautic.example.com'
+          email: 'admin@example.com'
+          mautic-version: '6.0.5-apache'
+          mautic-password: ${{ secrets.MAUTIC_PASSWORD }}
+          mysql-password: ${{ secrets.MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          do-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+        
+      - name: Health check
+        run: |
+          URL="${{ steps.deploy.outputs.mautic-url }}"
+          
+          # Wait for site to be fully ready
+          sleep 60
+          
+          # Check if site is responding
+          if curl -f "$URL" > /dev/null 2>&1; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            exit 1
+          fi
