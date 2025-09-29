@@ -11,15 +11,34 @@ A GitHub Action to automatically deploy Mautic (open-source marketing automation
 - 📧 **Email ready** - Pre-configured for email marketing campaigns
 - 🎨 **Custom themes/plugins** - Support for custom Mautic extensions
 - ⚙️ **Cron jobs** - Automated background tasks for optimal performance
-- 📊 **Monitoring ready** - Built-in logging and health checks
+- 📊 **Basic monitoring** - DigitalOcean monitoring, container logging, and deployment artifacts
 
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
 
-- DigitalOcean account with API token
-- SSH key pair for server access
+- DigitalOcean account with API token (see required permissions below)
+- SSH key pair for server access (uploaded to your DigitalOcean account)
 - Domain name (optional, can use IP address)
+
+#### DigitalOcean API Token Requirements
+
+Your DigitalOcean API token must have the following permissions:
+
+**Required Scopes:**
+- `droplet:create` - Create new VPS instances
+- `droplet:read` - Read droplet information  
+- `droplet:delete` - Delete droplets (for cleanup)
+- `ssh_key:read` - Access SSH keys for droplet creation
+- `domain:read` - Read domain information (if using custom domain)
+- `domain:write` - Manage DNS records (if using custom domain)
+
+**How to create a token:**
+1. Go to DigitalOcean Control Panel → API → Personal Access Tokens
+2. Click "Generate New Token"
+3. Set name (e.g., "GitHub Mautic Deploy")
+4. Select "Full Access" or manually select the scopes listed above
+5. Copy the token immediately (you won't see it again)
 
 ### 2. Setup Secrets
 
@@ -33,6 +52,39 @@ MAUTIC_PASSWORD=your_admin_password
 MYSQL_PASSWORD=your_mysql_password
 MYSQL_ROOT_PASSWORD=your_mysql_root_password
 ```
+
+#### SSH Key Setup Guide
+
+**🔐 Recommended: Generate a Dedicated SSH Key for Automation**
+
+For security, create a new SSH key specifically for this GitHub Action:
+
+```bash
+# Generate a new SSH key (without passphrase for automation)
+ssh-keygen -t ed25519 -f ~/.ssh/mautic_deploy_key -N "" -C "mautic-github-action"
+
+# Add the public key to your DigitalOcean account
+cat ~/.ssh/mautic_deploy_key.pub
+# Copy this output and add it in DigitalOcean Control Panel → Settings → Security → SSH Keys
+```
+
+**SSH_PRIVATE_KEY**: The content of your **dedicated** private SSH key
+- Use the new key: `cat ~/.ssh/mautic_deploy_key`
+- Copy the entire file content including `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`
+- ⚠️ **Key must have NO passphrase** for automation
+
+**SSH_FINGERPRINT**: The unique identifier of your SSH key in DigitalOcean (NOT a passphrase)
+- Format: `ab:cd:ef:12:34:56:78:90:ab:cd:ef:12:34:56:78:90`
+- **To find it**: DigitalOcean Control Panel → Settings → Security → SSH Keys
+- **Or via CLI**: `ssh-keygen -l -f ~/.ssh/mautic_deploy_key.pub`
+
+**Security Benefits:**
+- 🔒 Separate key limits blast radius if compromised
+- 🚫 Can be easily revoked without affecting other services
+- 📝 Clear audit trail for automation access
+- 🔄 Can be rotated independently
+
+Make sure your SSH public key is already added to your DigitalOcean account before running the action.
 
 ### 3. Create Workflow
 
@@ -90,7 +142,7 @@ jobs:
 | `mysql-root-password` | MySQL root password | `${{ secrets.MYSQL_ROOT_PASSWORD }}` |
 | `do-token` | DigitalOcean API token | `${{ secrets.DIGITALOCEAN_TOKEN }}` |
 | `ssh-private-key` | SSH private key for server access | `${{ secrets.SSH_PRIVATE_KEY }}` |
-| `ssh-fingerprint` | SSH key fingerprint | `${{ secrets.SSH_FINGERPRINT }}` |
+| `ssh-fingerprint` | SSH key fingerprint (from DigitalOcean) | `${{ secrets.SSH_FINGERPRINT }}` |
 
 ### Optional
 
@@ -190,26 +242,76 @@ mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
 
 ### Common Issues
 
-**1. SSH Connection Failed**
+**1. DigitalOcean API Permission Error**
+```
+Error: You are missing the required permission ssh_key:read
+```
+- Your DigitalOcean API token doesn't have sufficient permissions
+- Generate a new token with "Full Access" or ensure it includes: `droplet:create`, `droplet:read`, `droplet:delete`, `ssh_key:read`, `domain:read`, `domain:write`
+- Update your `DIGITALOCEAN_TOKEN` secret with the new token
+
+**2. SSH Connection Failed**
 ```
 Error: Permission denied (publickey)
 ```
-- Verify your SSH private key is correctly formatted in secrets
-- Ensure the SSH fingerprint matches your DigitalOcean SSH key
+- **Most Common Cause**: SSH fingerprint and private key don't match
+  - The `SSH_FINGERPRINT` must correspond to the `SSH_PRIVATE_KEY`
+  - Generate fingerprint from your key: `ssh-keygen -l -f ~/.ssh/id_rsa.pub`
+  - Verify it matches the fingerprint in DigitalOcean: Settings → Security → SSH Keys
+- Verify your SSH private key is correctly formatted in secrets (include the full key with headers)
+- Make sure your SSH public key is added to your DigitalOcean account **before** running the action
+- Use an SSH key without a passphrase for automation
+- Check the action logs for debugging information about key verification
 
-**2. Domain Not Pointing to Server**
+**3. Domain Not Pointing to Server**
 ```
 Error: Domain example.com does not point to VPS IP
 ```
 - Update your DNS A record to point to the VPS IP
 - Wait for DNS propagation (can take up to 24 hours)
 
-**3. SSL Certificate Failed**
+**4. SSL Certificate Failed**
 ```
 Error: SSL certificate installation failed
 ```
 - Ensure domain is pointing to the server before deployment
 - Check that port 80 and 443 are not blocked
+
+### SSH Key Troubleshooting Guide
+
+If you're getting `Permission denied (publickey)` errors, follow these steps:
+
+**1. Verify Your SSH Key Pair**
+```bash
+# Generate fingerprint from your dedicated private key
+ssh-keygen -l -f ~/.ssh/mautic_deploy_key
+
+# Generate fingerprint from your dedicated public key  
+ssh-keygen -l -f ~/.ssh/mautic_deploy_key.pub
+```
+
+**2. Check DigitalOcean SSH Keys**
+```bash
+# List all SSH keys in your DO account
+doctl compute ssh-key list
+
+# Find the fingerprint that matches your key
+```
+
+**3. Verify Key Format in GitHub Secrets**
+- `SSH_PRIVATE_KEY`: Must include headers and be the full private key:
+  ```
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAlwAAAAdzc2gtcn
+  ... (rest of key content) ...
+  -----END OPENSSH PRIVATE KEY-----
+  ```
+- `SSH_FINGERPRINT`: Must match exactly what DigitalOcean shows (format: `ab:cd:ef:12:34:56:78:90`)
+
+**4. Test SSH Connection Manually**
+```bash
+ssh -i ~/.ssh/mautic_deploy_key root@YOUR_VPS_IP
+```
 
 ### Getting Help
 
@@ -228,13 +330,20 @@ Error: SSL certificate installation failed
 
 ## 📊 Monitoring
 
-The deployment includes:
+The deployment includes basic monitoring:
 
-- Docker health checks
-- Automatic log rotation
-- Cron job monitoring
-- MySQL performance optimization
-- nginx caching and compression
+- DigitalOcean VPS monitoring (CPU, RAM, disk usage)
+- Docker container status monitoring
+- Application logs captured in `/var/www/logs`
+- Deployment log artifacts uploaded to GitHub Actions
+- Automated Mautic cron jobs for maintenance tasks
+
+**Note**: For production environments, consider adding:
+- Docker health checks in docker-compose.yml
+- Log rotation with logrotate
+- External monitoring (Uptime Robot, Pingdom, etc.)
+- Application performance monitoring (APM)
+- Database performance monitoring
 
 ## 🔄 Maintenance
 

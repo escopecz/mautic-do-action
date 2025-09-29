@@ -112,9 +112,37 @@ ls -la deploy.env docker-compose.yml setup-dc.sh .mautic_env
 
 # Deploy to server
 echo "🚀 Deploying to server..."
+
+# Setup SSH configuration
+echo "🔐 Setting up SSH authentication..."
 mkdir -p ~/.ssh
 echo "$INPUT_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
 chmod 600 ~/.ssh/id_rsa
+
+# Debug SSH key information
+echo "🔍 SSH Key debugging info:"
+echo "  - Private key file size: $(wc -c < ~/.ssh/id_rsa) bytes"
+echo "  - Private key format: $(head -n 1 ~/.ssh/id_rsa | grep -o 'BEGIN.*KEY' || echo 'Unknown format')"
+echo "  - SSH fingerprint format: $(echo "${INPUT_SSH_FINGERPRINT}" | grep -o '^[a-f0-9:]*' | wc -c) characters"
+echo "  - Key file permissions: $(stat -c %a ~/.ssh/id_rsa 2>/dev/null || stat -f %A ~/.ssh/id_rsa)"
+
+# Verify SSH connection before file transfer
+echo "🔐 Testing SSH connection..."
+if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'SSH connection successful'"; then
+    echo "✅ SSH connection test passed"
+else
+    echo "❌ SSH connection test failed"
+    echo "🔍 Debugging information:"
+    echo "  - VPS IP: ${VPS_IP}"
+    echo "  - Trying to connect as: root@${VPS_IP}"
+    echo "  - SSH fingerprint used for droplet: ${INPUT_SSH_FINGERPRINT}"
+    
+    # Check if SSH key is in DigitalOcean
+    echo "🔑 Checking SSH keys in DigitalOcean account..."
+    doctl compute ssh-key list --format ID,Name,Fingerprint
+    
+    exit 1
+fi
 
 # Copy files to server
 echo "📤 Copying files to server..."
