@@ -14,9 +14,6 @@ inputs:
   ssh-private-key:
     description: 'SSH private key for VPS access'
     required: true
-  ssh-fingerprint:
-    description: 'DigitalOcean SSH key fingerprint'
-    required: true
   
   # Mautic Configuration
   email:
@@ -130,11 +127,6 @@ runs:
           exit 1
         fi
         
-        if [ -z "${{ inputs.ssh-fingerprint }}" ]; then
-          echo "❌ Error: ssh-fingerprint is required"
-          exit 1
-        fi
-        
         if [ -z "${{ inputs.email }}" ]; then
           echo "❌ Error: email is required"
           exit 1
@@ -164,7 +156,6 @@ runs:
       env:
         INPUT_DIGITALOCEAN_TOKEN: ${{ inputs.digitalocean-token }}
         INPUT_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
-        INPUT_SSH_FINGERPRINT: ${{ inputs.ssh-fingerprint }}
         INPUT_EMAIL: ${{ inputs.email }}
         INPUT_MAUTIC_PASSWORD: ${{ inputs.mautic-password }}
         INPUT_MAUTIC_VERSION: ${{ inputs.mautic-version }}

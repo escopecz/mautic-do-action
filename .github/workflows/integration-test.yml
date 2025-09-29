@@ -36,7 +36,6 @@ jobs:
           mysql-root-password: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
           digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           
       - name: Validate deployment
         run: |

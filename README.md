@@ -47,7 +47,6 @@ Add these secrets to your GitHub repository (`Settings` → `Secrets and variabl
 ```
 DIGITALOCEAN_TOKEN=your_do_api_token
 SSH_PRIVATE_KEY=your_ssh_private_key
-SSH_FINGERPRINT=your_ssh_key_fingerprint
 MAUTIC_PASSWORD=your_admin_password
 MYSQL_PASSWORD=your_mysql_password
 MYSQL_ROOT_PASSWORD=your_mysql_root_password
@@ -73,10 +72,6 @@ cat ~/.ssh/mautic_deploy_key.pub
 - Copy the entire file content including `-----BEGIN OPENSSH PRIVATE KEY-----` and `-----END OPENSSH PRIVATE KEY-----`
 - ⚠️ **Key must have NO passphrase** for automation
 
-**SSH_FINGERPRINT**: The unique identifier of your SSH key in DigitalOcean (NOT a passphrase)
-- Format: `ab:cd:ef:12:34:56:78:90:ab:cd:ef:12:34:56:78:90`
-- **To find it**: DigitalOcean Control Panel → Settings → Security → SSH Keys
-- **Or via CLI**: `ssh-keygen -l -f ~/.ssh/mautic_deploy_key.pub`
 
 **Security Benefits:**
 - 🔒 Separate key limits blast radius if compromised
@@ -119,7 +114,6 @@ jobs:
           mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           do-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
 ```
 
 ### 4. Deploy
@@ -142,7 +136,6 @@ jobs:
 | `mysql-root-password` | MySQL root password | `${{ secrets.MYSQL_ROOT_PASSWORD }}` |
 | `do-token` | DigitalOcean API token | `${{ secrets.DIGITALOCEAN_TOKEN }}` |
 | `ssh-private-key` | SSH private key for server access | `${{ secrets.SSH_PRIVATE_KEY }}` |
-| `ssh-fingerprint` | SSH key fingerprint (from DigitalOcean) | `${{ secrets.SSH_FINGERPRINT }}` |
 
 ### Optional
 
@@ -254,10 +247,9 @@ Error: You are missing the required permission ssh_key:read
 ```
 Error: Permission denied (publickey)
 ```
-- **Most Common Cause**: SSH fingerprint and private key don't match
-  - The `SSH_FINGERPRINT` must correspond to the `SSH_PRIVATE_KEY`
-  - Generate fingerprint from your key: `ssh-keygen -l -f ~/.ssh/id_rsa.pub`
-  - Verify it matches the fingerprint in DigitalOcean: Settings → Security → SSH Keys
+- **Most Common Cause**: SSH private key doesn't match any key in your DigitalOcean account
+  - Ensure your SSH public key is added to DigitalOcean: Settings → Security → SSH Keys
+  - The action automatically generates the fingerprint and finds the matching key
 - Verify your SSH private key is correctly formatted in secrets (include the full key with headers)
 - Make sure your SSH public key is added to your DigitalOcean account **before** running the action
 - Use an SSH key without a passphrase for automation
@@ -281,13 +273,13 @@ Error: SSL certificate installation failed
 
 If you're getting `Permission denied (publickey)` errors, follow these steps:
 
-**1. Verify Your SSH Key Pair**
+**1. Verify Your SSH Key**
 ```bash
 # Generate fingerprint from your dedicated private key
 ssh-keygen -l -f ~/.ssh/mautic_deploy_key
 
-# Generate fingerprint from your dedicated public key  
-ssh-keygen -l -f ~/.ssh/mautic_deploy_key.pub
+# View your public key (to add to DigitalOcean if missing)
+cat ~/.ssh/mautic_deploy_key.pub
 ```
 
 **2. Check DigitalOcean SSH Keys**
@@ -306,7 +298,7 @@ doctl compute ssh-key list
   ... (rest of key content) ...
   -----END OPENSSH PRIVATE KEY-----
   ```
-- `SSH_FINGERPRINT`: Must match exactly what DigitalOcean shows (format: `ab:cd:ef:12:34:56:78:90`)
+- The action automatically finds the matching key in your DigitalOcean account
 
 **4. Test SSH Connection Manually**
 ```bash
