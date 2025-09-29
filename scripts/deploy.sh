@@ -2,44 +2,37 @@
 
 set -e
 
-echo "🚀 Starting Mautic deployment to DigitalOcean..."
+echo "🚀 Starting# Find the SSH key ID in DigitalOcean by fingerprint
+echo "🔍 Finding SSH key in DigitalOcean account..."
+echo "Looking for fingerprint: ${SSH_FINGERPRINT}"
+
+# Try to list SSH keys and find the matching one
+SSH_KEY_LIST=$(doctl compute ssh-key list --format ID,FingerPrint --no-header 2>/dev/null || doctl compute ssh-key list --format ID,Fingerprint --no-header 2>/dev/null || echo "")
+
+if [ -z "$SSH_KEY_LIST" ]; then
+    echo "❌ Error: Failed to list SSH keys from DigitalOcean"
+    exit 1
+fi
+
+SSH_KEY_ID=$(echo "$SSH_KEY_LIST" | grep "$SSH_FINGERPRINT" | awk '{print $1}')
+
+if [ -z "$SSH_KEY_ID" ]; then
+    echo "❌ Error: SSH key not found in DigitalOcean account"
+    echo "Available SSH keys in your DigitalOcean account:"
+    echo "$SSH_KEY_LIST"
+    echo ""
+    echo "Your generated fingerprint: ${SSH_FINGERPRINT}"
+    echo ""
+    echo "Please add your SSH public key to DigitalOcean first:"
+    echo "Public Key:"
+    cat ~/.ssh/id_rsa.pub
+    echo ""
+    echo "Go to: DigitalOcean Control Panel → Settings → Security → SSH Keys"
+    exit 1
+fiment to DigitalOcean..."
 
 # Set default port if not provided
-MAUTIC_PORT=${I# Verify SSH connection before file transfer
-echo "🔐 Testing SSH connection..."
-SSH_TEST_TIMEOUT=60
-SSH_TEST_COUNTER=0
-
-while [ $SSH_TEST_COUNTER -lt $SSH_TEST_TIMEOUT ]; do
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'SSH connection successful'" 2>/dev/null; then
-        echo "✅ SSH connection test passed"
-        break
-    else
-        echo "⏳ SSH authentication not ready, waiting... (${SSH_TEST_COUNTER}/${SSH_TEST_TIMEOUT}s)"
-        sleep 10
-        SSH_TEST_COUNTER=$((SSH_TEST_COUNTER + 10))
-    fi
-done
-
-if [ $SSH_TEST_COUNTER -ge $SSH_TEST_TIMEOUT ]; then
-    echo "❌ SSH connection test failed after ${SSH_TEST_TIMEOUT} seconds"
-    echo "🔍 Debugging information:"
-    echo "  - VPS IP: ${VPS_IP}"
-    echo "  - Connection user: root"
-    echo "  - SSH key format verified: $(head -n 1 ~/.ssh/id_rsa | grep -q 'BEGIN.*KEY' && echo 'Valid' || echo 'Invalid')"
-    echo "  - Generated fingerprint: ${SSH_FINGERPRINT}"
-    
-    # Check if SSH key is in DigitalOcean (without exposing sensitive data)
-    echo "🔑 Checking SSH key availability..."
-    SSH_KEY_COUNT=$(doctl compute ssh-key list --format ID --no-header | wc -l 2>/dev/null || echo "0")
-    echo "  - SSH keys in account: ${SSH_KEY_COUNT}"
-    
-    # Try to get more info about the droplet
-    echo "🔍 Droplet information:"
-    doctl compute droplet get "${INPUT_VPS_NAME}" --format ID,Name,Status,PublicIPv4,Image,Region || echo "⚠️ Failed to get droplet info"
-    
-    exit 1
-fi-8001}
+MAUTIC_PORT=${INPUT_MAUTIC_PORT:-8001}
 
 echo "📝 Configuration:"
 echo "  VPS Name: ${INPUT_VPS_NAME}"
@@ -50,6 +43,49 @@ echo "  Email: ${INPUT_EMAIL}"
 echo "  Domain: ${INPUT_DOMAIN:-'Not set (will use IP)'}"
 echo "  Themes: ${INPUT_THEMES:-'None'}"
 echo "  Plugins: ${INPUT_PLUGINS:-'None'}"
+
+# Setup SSH configuration and generate fingerprint
+echo "🔐 Setting up SSH authentication..."
+mkdir -p ~/.ssh
+echo "$INPUT_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+chmod 600 ~/.ssh/id_rsa
+
+# Generate public key and fingerprint from private key
+echo "🔑 Generating SSH fingerprint from private key..."
+ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
+SSH_FINGERPRINT=$(ssh-keygen -l -f ~/.ssh/id_rsa.pub | awk '{print $2}')
+
+if [ -z "$SSH_FINGERPRINT" ]; then
+    echo "❌ Error: Failed to generate SSH fingerprint from private key"
+    echo "Please verify your SSH private key is valid"
+    exit 1
+fi
+
+echo "✅ SSH fingerprint generated: ${SSH_FINGERPRINT}"
+
+# Find the SSH key ID in DigitalOcean by fingerprint
+echo "� Finding SSH key in DigitalOcean account..."
+SSH_KEY_ID=$(doctl compute ssh-key list --format ID,FingerPrint --no-header | grep "$SSH_FINGERPRINT" | awk '{print $1}')
+
+if [ -z "$SSH_KEY_ID" ]; then
+    echo "❌ Error: SSH key not found in DigitalOcean account"
+    echo "Please add your SSH public key to DigitalOcean first:"
+    echo ""
+    echo "Public Key:"
+    cat ~/.ssh/id_rsa.pub
+    echo ""
+    echo "Go to: DigitalOcean Control Panel → Settings → Security → SSH Keys"
+    exit 1
+fi
+
+echo "✅ Found SSH key in DigitalOcean (ID: ${SSH_KEY_ID})"
+
+# Debug SSH key information
+echo "🔍 SSH Key debugging info:"
+echo "  - Private key file size: $(wc -c < ~/.ssh/id_rsa) bytes"
+echo "  - Private key format: $(head -n 1 ~/.ssh/id_rsa | grep -o 'BEGIN.*KEY' || echo 'Unknown format')"
+echo "  - Generated fingerprint: ${SSH_FINGERPRINT}"
+echo "  - Key file permissions: $(stat -c %a ~/.ssh/id_rsa 2>/dev/null || stat -f %A ~/.ssh/id_rsa)"
 
 # Create VPS if it doesn't exist
 echo "🖥️  Checking if VPS '${INPUT_VPS_NAME}' exists..."
@@ -166,65 +202,38 @@ ls -la deploy.env docker-compose.yml setup-dc.sh .mautic_env
 # Deploy to server
 echo "🚀 Deploying to server..."
 
-# Setup SSH configuration
-echo "🔐 Setting up SSH authentication..."
-mkdir -p ~/.ssh
-echo "$INPUT_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-chmod 600 ~/.ssh/id_rsa
-
-# Generate public key and fingerprint from private key
-echo "🔑 Generating SSH fingerprint from private key..."
-ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
-SSH_FINGERPRINT=$(ssh-keygen -l -f ~/.ssh/id_rsa.pub | awk '{print $2}')
-
-if [ -z "$SSH_FINGERPRINT" ]; then
-    echo "❌ Error: Failed to generate SSH fingerprint from private key"
-    echo "Please verify your SSH private key is valid"
-    exit 1
-fi
-
-echo "✅ SSH fingerprint generated: ${SSH_FINGERPRINT}"
-
-# Find the SSH key ID in DigitalOcean by fingerprint
-echo "🔍 Finding SSH key in DigitalOcean account..."
-SSH_KEY_ID=$(doctl compute ssh-key list --format ID,FingerPrint --no-header | grep "$SSH_FINGERPRINT" | awk '{print $1}')
-
-if [ -z "$SSH_KEY_ID" ]; then
-    echo "❌ Error: SSH key not found in DigitalOcean account"
-    echo "Please add your SSH public key to DigitalOcean first:"
-    echo ""
-    echo "Public Key:"
-    cat ~/.ssh/id_rsa.pub
-    echo ""
-    echo "Go to: DigitalOcean Control Panel → Settings → Security → SSH Keys"
-    exit 1
-fi
-
-echo "✅ Found SSH key in DigitalOcean (ID: ${SSH_KEY_ID})"
-
-# Debug SSH key information
-echo "🔍 SSH Key debugging info:"
-echo "  - Private key file size: $(wc -c < ~/.ssh/id_rsa) bytes"
-echo "  - Private key format: $(head -n 1 ~/.ssh/id_rsa | grep -o 'BEGIN.*KEY' || echo 'Unknown format')"
-echo "  - Generated fingerprint: ${SSH_FINGERPRINT}"
-echo "  - Key file permissions: $(stat -c %a ~/.ssh/id_rsa 2>/dev/null || stat -f %A ~/.ssh/id_rsa)"
-
 # Verify SSH connection before file transfer
-echo "🔐 Testing SSH connection..."
-if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'SSH connection successful'"; then
-    echo "✅ SSH connection test passed"
-else
-    echo "❌ SSH connection test failed"
+echo "� Testing SSH connection..."
+SSH_TEST_TIMEOUT=60
+SSH_TEST_COUNTER=0
+
+while [ $SSH_TEST_COUNTER -lt $SSH_TEST_TIMEOUT ]; do
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'SSH connection successful'" 2>/dev/null; then
+        echo "✅ SSH connection test passed"
+        break
+    else
+        echo "⏳ SSH authentication not ready, waiting... (${SSH_TEST_COUNTER}/${SSH_TEST_TIMEOUT}s)"
+        sleep 10
+        SSH_TEST_COUNTER=$((SSH_TEST_COUNTER + 10))
+    fi
+done
+
+if [ $SSH_TEST_COUNTER -ge $SSH_TEST_TIMEOUT ]; then
+    echo "❌ SSH connection test failed after ${SSH_TEST_TIMEOUT} seconds"
     echo "🔍 Debugging information:"
     echo "  - VPS IP: ${VPS_IP}"
     echo "  - Connection user: root"
     echo "  - SSH key format verified: $(head -n 1 ~/.ssh/id_rsa | grep -q 'BEGIN.*KEY' && echo 'Valid' || echo 'Invalid')"
     echo "  - Generated fingerprint: ${SSH_FINGERPRINT}"
     
-    # Check SSH key availability without exposing sensitive data
-    echo "🔑 Verifying SSH key configuration..."
+    # Check if SSH key is in DigitalOcean (without exposing sensitive data)
+    echo "🔑 Checking SSH key availability..."
     SSH_KEY_COUNT=$(doctl compute ssh-key list --format ID --no-header | wc -l 2>/dev/null || echo "0")
     echo "  - SSH keys in account: ${SSH_KEY_COUNT}"
+    
+    # Try to get more info about the droplet
+    echo "🔍 Droplet information:"
+    doctl compute droplet get "${INPUT_VPS_NAME}" --format ID,Name,Status,PublicIPv4,Image,Region || echo "⚠️ Failed to get droplet info"
     
     exit 1
 fi
