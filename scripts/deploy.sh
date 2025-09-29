@@ -21,7 +21,8 @@ if [ -z "$SSH_KEY_ID" ]; then
     echo "Available SSH keys in your DigitalOcean account:"
     echo "$SSH_KEY_LIST"
     echo ""
-    echo "Your generated fingerprint: ${SSH_FINGERPRINT}"
+    echo "Your generated fingerprint MD5: ${SSH_FINGERPRINT}"
+    echo "Your generated fingerprint SHA256: $(ssh-keygen -l -f ~/.ssh/id_rsa.pub | awk '{print $2}')"
     echo ""
     echo "Please add your SSH public key to DigitalOcean first:"
     echo "Public Key:"
@@ -53,7 +54,9 @@ chmod 600 ~/.ssh/id_rsa
 # Generate public key and fingerprint from private key
 echo "🔑 Generating SSH fingerprint from private key..."
 ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
-SSH_FINGERPRINT=$(ssh-keygen -l -f ~/.ssh/id_rsa.pub | awk '{print $2}')
+
+# Generate MD5 fingerprint (DigitalOcean format)
+SSH_FINGERPRINT=$(ssh-keygen -l -f ~/.ssh/id_rsa.pub -E md5 | awk '{print $2}' | sed 's/MD5://')
 
 if [ -z "$SSH_FINGERPRINT" ]; then
     echo "❌ Error: Failed to generate SSH fingerprint from private key"
@@ -61,7 +64,7 @@ if [ -z "$SSH_FINGERPRINT" ]; then
     exit 1
 fi
 
-echo "✅ SSH fingerprint generated: ${SSH_FINGERPRINT}"
+echo "✅ SSH fingerprint generated MD5: ${SSH_FINGERPRINT}"
 
 # Find the SSH key ID in DigitalOcean by fingerprint
 echo "� Finding SSH key in DigitalOcean account..."
@@ -84,7 +87,7 @@ echo "✅ Found SSH key in DigitalOcean (ID: ${SSH_KEY_ID})"
 echo "🔍 SSH Key debugging info:"
 echo "  - Private key file size: $(wc -c < ~/.ssh/id_rsa) bytes"
 echo "  - Private key format: $(head -n 1 ~/.ssh/id_rsa | grep -o 'BEGIN.*KEY' || echo 'Unknown format')"
-echo "  - Generated fingerprint: ${SSH_FINGERPRINT}"
+echo "  - Generated fingerprint MD5: ${SSH_FINGERPRINT}"
 echo "  - Key file permissions: $(stat -c %a ~/.ssh/id_rsa 2>/dev/null || stat -f %A ~/.ssh/id_rsa)"
 
 # Create VPS if it doesn't exist
