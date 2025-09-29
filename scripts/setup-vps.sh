@@ -23,6 +23,13 @@ sed -i 's/#PermitRootLogin yes/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/PermitRootLogin no/PermitRootLogin yes/' /etc/ssh/sshd_config
 systemctl restart ssh
 
+echo "📁 Creating deployment directories..."
+# Create the deployment directory structure
+mkdir -p /var/www
+mkdir -p /var/log
+chown -R root:root /var/www
+chmod 755 /var/www
+
 echo "🧹 Cleaning up..."
 apt-get autoremove -y
 apt-get autoclean

@@ -243,6 +243,9 @@ fi
 
 # Copy files to server
 echo "📤 Copying files to server..."
+# Ensure /var/www directory exists
+ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "mkdir -p /var/www"
+# Copy files
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r . root@${VPS_IP}:/var/www/
 
 # Run setup script
