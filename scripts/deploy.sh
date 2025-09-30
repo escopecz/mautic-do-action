@@ -250,7 +250,24 @@ scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r . root@${VPS_IP}:/var/www/
 
 # Run setup script
 echo "⚙️  Running setup script on server..."
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && ./setup-dc.sh > /var/log/setup-dc.log 2>&1"
+if ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && ./setup-dc.sh > /var/log/setup-dc.log 2>&1"; then
+    echo "✅ Setup script completed successfully"
+else
+    SETUP_EXIT_CODE=$?
+    echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
+    
+    # Try to get the log file anyway
+    echo "📥 Attempting to download setup log for debugging..."
+    if scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./setup-dc.log 2>/dev/null; then
+        echo "📋 Setup log contents:"
+        tail -20 ./setup-dc.log
+    else
+        echo "⚠️ Could not retrieve setup log, trying to get error details..."
+        # Get basic error information
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup script permissions:'; ls -la /var/www/setup-dc.sh 2>/dev/null || echo 'setup-dc.sh not found'"
+    fi
+    exit 1
+fi
 
 # Download setup log
 echo "📥 Downloading setup log..."

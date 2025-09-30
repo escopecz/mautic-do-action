@@ -8,6 +8,11 @@ exec 2>&1
 
 echo "🚀 Starting Mautic Docker Compose setup..."
 echo "Timestamp: $(date)"
+echo "🔍 Environment check:"
+echo "  - Current user: $(whoami)"
+echo "  - Current directory: $(pwd)"
+echo "  - Available commands: docker=$(command -v docker || echo 'NOT FOUND'), curl=$(command -v curl || echo 'NOT FOUND')"
+echo "  - Docker version: $(docker --version 2>/dev/null || echo 'Docker not available')"
 
 # Source environment variables
 if [ -f deploy.env ]; then
@@ -17,6 +22,8 @@ if [ -f deploy.env ]; then
     set +a
 else
     echo "❌ Error: deploy.env file not found"
+    echo "📁 Current directory contents:"
+    ls -la
     exit 1
 fi
 
@@ -62,13 +69,34 @@ else
 fi
 
 # Install Docker Compose if not present
-if ! command -v docker-compose &> /dev/null; then
+if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
     echo "📦 Installing Docker Compose..."
     curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
+    echo "✅ Docker Compose installed"
 else
-    echo "✅ Docker Compose is already installed"
+    if command -v docker-compose &> /dev/null; then
+        echo "✅ Docker Compose (legacy) is already installed"
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        echo "✅ Docker Compose (plugin) is already installed"
+        DOCKER_COMPOSE_CMD="docker compose"
+    fi
 fi
+
+# Determine which docker-compose command to use
+if [ -z "$DOCKER_COMPOSE_CMD" ]; then
+    if command -v docker-compose &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    elif docker compose version &> /dev/null; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    else
+        echo "❌ Error: Docker Compose not available"
+        exit 1
+    fi
+fi
+
+echo "🐳 Using Docker Compose command: $DOCKER_COMPOSE_CMD"
 
 # Start Docker service
 systemctl start docker
@@ -82,7 +110,7 @@ cd /var/www
 # Stop any existing containers
 echo "🛑 Stopping any existing containers..."
 if [ -f docker-compose.yml ]; then
-    docker-compose down || true
+    $DOCKER_COMPOSE_CMD down || true
 fi
 
 # Create Mautic environment file
@@ -130,7 +158,7 @@ crontab cron/mautic
 
 # Start containers first
 echo "🚀 Starting Docker containers..."
-docker-compose up -d
+$DOCKER_COMPOSE_CMD up -d
 
 # Wait for services to be ready
 echo "⏳ Waiting for services to start..."
@@ -249,9 +277,9 @@ echo "  Logs: /var/www/logs"
 
 echo ""
 echo "⚙️  Management Commands:"
-echo "  View logs: docker-compose logs -f"
-echo "  Restart services: docker-compose restart"
-echo "  Stop services: docker-compose down"
-echo "  Update Mautic: Change MAUTIC_VERSION in .mautic_env and run docker-compose up -d"
+echo "  View logs: $DOCKER_COMPOSE_CMD logs -f"
+echo "  Restart services: $DOCKER_COMPOSE_CMD restart"
+echo "  Stop services: $DOCKER_COMPOSE_CMD down"
+echo "  Update Mautic: Change MAUTIC_VERSION in .mautic_env and run $DOCKER_COMPOSE_CMD up -d"
 
 echo "Setup completed at: $(date)"
