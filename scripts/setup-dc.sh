@@ -3,6 +3,8 @@
 set -e
 
 # Enhanced error handling and logging
+touch /var/log/setup-dc.log
+chmod 600 /var/log/setup-dc.log  # Restrict log file access
 exec > >(tee -a /var/log/setup-dc.log)
 exec 2>&1
 
@@ -17,9 +19,21 @@ echo "  - Docker version: $(docker --version 2>/dev/null || echo 'Docker not ava
 # Source environment variables
 if [ -f deploy.env ]; then
     echo "📋 Loading deployment configuration..."
-    set -a
-    source deploy.env
-    set +a
+    echo "📁 deploy.env file found ($(wc -l < deploy.env) lines) - contents hidden for security"
+    echo "---"
+    
+    # Validate deploy.env format before sourcing
+    if grep -E '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*=[^=]*$|^[[:space:]]*#|^[[:space:]]*$' deploy.env > /dev/null; then
+        set -a
+        source deploy.env
+        set +a
+        echo "✅ Configuration loaded successfully"
+    else
+        echo "❌ Error: deploy.env contains invalid format"
+        echo "📋 Invalid lines:"
+        grep -vE '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*=[^=]*$|^[[:space:]]*#|^[[:space:]]*$' deploy.env || true
+        exit 1
+    fi
 else
     echo "❌ Error: deploy.env file not found"
     echo "📁 Current directory contents:"
