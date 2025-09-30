@@ -55,6 +55,24 @@ echo "✅ Configuration validated"
 # Install system dependencies
 echo "📦 Installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
+
+# Wait for apt locks to be released
+echo "🔒 Checking for apt locks..."
+timeout=300
+counter=0
+while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+    if [ $counter -ge $timeout ]; then
+        echo "❌ Timeout waiting for apt locks to be released"
+        echo "🔍 Current apt processes:"
+        ps aux | grep -E "(apt|dpkg)" | grep -v grep || true
+        exit 1
+    fi
+    echo "⏳ Waiting for apt locks to be released... ($counter/${timeout}s)"
+    sleep 10
+    counter=$((counter + 10))
+done
+
+echo "✅ Apt locks released, proceeding with package installation"
 apt-get update
 
 # Install required packages
@@ -66,9 +84,30 @@ fi
 for package in "${packages[@]}"; do
     if ! dpkg -l | grep -q "^ii  $package "; then
         echo "Installing $package..."
-        apt-get install -y "$package"
+        retry_count=0
+        max_retries=3
+        while [ $retry_count -lt $max_retries ]; do
+            if apt-get install -y "$package"; then
+                echo "✅ $package installed successfully"
+                break
+            else
+                retry_count=$((retry_count + 1))
+                if [ $retry_count -lt $max_retries ]; then
+                    echo "⚠️ Failed to install $package (attempt $retry_count/$max_retries), retrying in 10 seconds..."
+                    sleep 10
+                    # Check for locks again
+                    while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+                        echo "⏳ Waiting for dpkg lock..."
+                        sleep 5
+                    done
+                else
+                    echo "❌ Failed to install $package after $max_retries attempts"
+                    exit 1
+                fi
+            fi
+        done
     else
-        echo "$package is already installed"
+        echo "✅ $package is already installed"
     fi
 done
 
