@@ -251,35 +251,74 @@ while ! docker exec mautic_mysql mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "S
 done
 echo "✅ MySQL is ready"
 
-# Install Mautic if not already installed
-echo "🔧 Installing Mautic..."
-docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
-    --db_driver=pdo_mysql \
-    --db_host=mysql \
-    --db_port=3306 \
-    --db_name="${MYSQL_DATABASE}" \
-    --db_user="${MYSQL_USER}" \
-    --db_password="${MYSQL_PASSWORD}" \
-    --admin_email="${EMAIL_ADDRESS}" \
-    --admin_password="${MAUTIC_PASSWORD}" \
-    --admin_firstname="Admin" \
-    --admin_lastname="User" \
-    --force --no-interaction
+# Wait for Mautic files to be ready
+echo "📁 Waiting for Mautic files to be initialized..."
+mautic_timeout=300
+mautic_counter=0
+while ! docker exec mautic_app test -f /var/www/html/bin/console; do
+    if [ $mautic_counter -ge $mautic_timeout ]; then
+        echo "❌ Timeout waiting for Mautic files to be ready"
+        echo "📋 Mautic container logs:"
+        docker logs mautic_app --tail 30 2>/dev/null || echo "No logs available"
+        echo "📁 Directory contents:"
+        docker exec mautic_app ls -la /var/www/html/ 2>/dev/null || echo "Cannot access directory"
+        exit 1
+    fi
+    
+    # Show progress every 30 seconds
+    if [ $((mautic_counter % 30)) -eq 0 ] && [ $mautic_counter -gt 0 ]; then
+        echo "📊 File initialization progress:"
+        echo "  - Container status: $(docker inspect --format='{{.State.Status}}' mautic_app 2>/dev/null || echo 'unknown')"
+        echo "  - Directory contents:"
+        docker exec mautic_app ls -la /var/www/html/ 2>/dev/null | head -10 || echo "    Cannot access directory"
+        echo "  - Recent logs:"
+        docker logs mautic_app --tail 3 --since 30s 2>/dev/null || echo "    No recent logs"
+    fi
+    
+    echo "Waiting for Mautic files... (${mautic_counter}/${mautic_timeout}s)"
+    sleep 10
+    mautic_counter=$((mautic_counter + 10))
+done
+echo "✅ Mautic files are ready"
 
-if [ $? -eq 0 ]; then
-    echo "✅ Mautic installation completed"
+# Check if Mautic is already installed
+echo "🔍 Checking if Mautic is already installed..."
+if docker exec mautic_app test -f /var/www/html/config/local.php; then
+    echo "✅ Mautic appears to be already configured"
+    # Still run cache clear to ensure everything is fresh
+    echo "🧹 Clearing Mautic cache..."
+    docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
 else
-    echo "⚠️ Mautic installation may have failed, checking application status..."
+    # Install Mautic if not already installed
+    echo "🔧 Installing Mautic..."
+    docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
+        --db_driver=pdo_mysql \
+        --db_host=mysql \
+        --db_port=3306 \
+        --db_name="${MYSQL_DATABASE}" \
+        --db_user="${MYSQL_USER}" \
+        --db_password="${MYSQL_PASSWORD}" \
+        --admin_email="${EMAIL_ADDRESS}" \
+        --admin_password="${MAUTIC_PASSWORD}" \
+        --admin_firstname="Admin" \
+        --admin_lastname="User" \
+        --force --no-interaction
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Mautic installation completed"
+    else
+        echo "⚠️ Mautic installation may have failed, checking application status..."
+    fi
+
+    # Clear cache after installation
+    echo "🧹 Clearing Mautic cache..."
+    docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
 fi
 
 # Set proper permissions
 echo "🔐 Setting Mautic permissions..."
 docker exec mautic_app chown -R www-data:www-data /var/www/html
 docker exec mautic_app chmod -R 755 /var/www/html
-
-# Clear cache
-echo "🧹 Clearing Mautic cache..."
-docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
 
 # Install themes if specified
 if [ -n "$MAUTIC_THEMES" ] && [ "$MAUTIC_THEMES" != "None" ]; then
