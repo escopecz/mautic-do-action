@@ -251,6 +251,36 @@ while ! docker exec mautic_mysql mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "S
 done
 echo "✅ MySQL is ready"
 
+# Install Mautic if not already installed
+echo "🔧 Installing Mautic..."
+docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
+    --db_driver=pdo_mysql \
+    --db_host=mysql \
+    --db_port=3306 \
+    --db_name="${MYSQL_DATABASE}" \
+    --db_user="${MYSQL_USER}" \
+    --db_password="${MYSQL_PASSWORD}" \
+    --admin_email="${EMAIL_ADDRESS}" \
+    --admin_password="${MAUTIC_PASSWORD}" \
+    --admin_firstname="Admin" \
+    --admin_lastname="User" \
+    --force --no-interaction
+
+if [ $? -eq 0 ]; then
+    echo "✅ Mautic installation completed"
+else
+    echo "⚠️ Mautic installation may have failed, checking application status..."
+fi
+
+# Set proper permissions
+echo "🔐 Setting Mautic permissions..."
+docker exec mautic_app chown -R www-data:www-data /var/www/html
+docker exec mautic_app chmod -R 755 /var/www/html
+
+# Clear cache
+echo "🧹 Clearing Mautic cache..."
+docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
+
 # Install themes if specified
 if [ -n "$MAUTIC_THEMES" ] && [ "$MAUTIC_THEMES" != "None" ]; then
     echo "🎨 Installing Mautic themes via Composer..."
@@ -291,7 +321,7 @@ docker logs mautic_app --tail 20 2>/dev/null || echo "⚠️ Unable to fetch Mau
 
 timeout=600  # Increased to 10 minutes for Mautic initialization
 counter=0
-while ! curl -f -s "http://localhost:${PORT}" > /dev/null 2>&1; do
+while true; do
     if [ $counter -ge $timeout ]; then
         echo "❌ Mautic application timeout after ${timeout} seconds"
         echo "🔍 Final diagnostics:"
@@ -306,6 +336,15 @@ while ! curl -f -s "http://localhost:${PORT}" > /dev/null 2>&1; do
         exit 1
     fi
     
+    # Check HTTP response
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT}" 2>/dev/null || echo "000")
+    
+    # Accept 200 (success) or 302 (redirect to login) as success
+    if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
+        echo "✅ Mautic is ready (HTTP ${http_code})"
+        break
+    fi
+    
     # Show progress and diagnostics every 60 seconds
     if [ $((counter % 60)) -eq 0 ] && [ $counter -gt 0 ]; then
         echo "📊 Progress update at ${counter}s:"
@@ -314,14 +353,13 @@ while ! curl -f -s "http://localhost:${PORT}" > /dev/null 2>&1; do
         echo "  - Recent Mautic logs:"
         docker logs mautic_app --tail 5 --since 60s 2>/dev/null || echo "    No recent logs"
         echo "  - HTTP response test:"
-        curl -s -o /dev/null -w "    HTTP Status: %{http_code}, Response time: %{time_total}s\n" "http://localhost:${PORT}" || echo "    Connection failed"
+        echo "    HTTP Status: ${http_code}, Response time: $(curl -s -o /dev/null -w "%{time_total}s" "http://localhost:${PORT}" 2>/dev/null || echo 'N/A')"
     fi
     
-    echo "Waiting for Mautic... (${counter}/${timeout}s)"
+    echo "Waiting for Mautic... (${counter}/${timeout}s) [HTTP: ${http_code}]"
     sleep 10
     counter=$((counter + 10))
 done
-echo "✅ Mautic is ready"
 
 # Setup SSL if domain is provided
 if [ -n "$DOMAIN_NAME" ]; then
