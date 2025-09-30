@@ -217,6 +217,25 @@ $DOCKER_COMPOSE_CMD up -d
 echo "⏳ Waiting for services to start..."
 sleep 30
 
+# Wait for containers to be healthy
+echo "🏥 Checking container health..."
+container_timeout=180
+container_counter=0
+while ! docker ps --filter "name=mautic_app" --filter "status=running" --quiet | grep -q .; do
+    if [ $container_counter -ge $container_timeout ]; then
+        echo "❌ Mautic container failed to start properly"
+        echo "📊 Container status:"
+        $DOCKER_COMPOSE_CMD ps
+        echo "📋 Container logs:"
+        docker logs mautic_app --tail 50 2>/dev/null || echo "No logs available"
+        exit 1
+    fi
+    echo "Waiting for Mautic container to be running... (${container_counter}/${container_timeout}s)"
+    sleep 10
+    container_counter=$((container_counter + 10))
+done
+echo "✅ Mautic container is running"
+
 # Check MySQL connection
 echo "🔍 Checking MySQL connection..."
 timeout=120
@@ -264,14 +283,41 @@ fi
 
 # Check Mautic application
 echo "🔍 Checking Mautic application..."
-timeout=300
+echo "📊 Container status:"
+$DOCKER_COMPOSE_CMD ps
+
+echo "📋 Checking Mautic logs for startup progress..."
+docker logs mautic_app --tail 20 2>/dev/null || echo "⚠️ Unable to fetch Mautic logs"
+
+timeout=600  # Increased to 10 minutes for Mautic initialization
 counter=0
-while ! curl -f "http://localhost:${PORT}" > /dev/null 2>&1; do
+while ! curl -f -s "http://localhost:${PORT}" > /dev/null 2>&1; do
     if [ $counter -ge $timeout ]; then
-        echo "❌ Mautic application timeout"
+        echo "❌ Mautic application timeout after ${timeout} seconds"
+        echo "🔍 Final diagnostics:"
+        echo "📊 Container status:"
+        $DOCKER_COMPOSE_CMD ps
+        echo "📋 Mautic application logs (last 50 lines):"
+        docker logs mautic_app --tail 50 2>/dev/null || echo "No logs available"
+        echo "📋 MySQL logs (last 20 lines):"
+        docker logs mautic_mysql --tail 20 2>/dev/null || echo "No logs available"
+        echo "🌐 Network connectivity test:"
+        curl -v "http://localhost:${PORT}" || true
         exit 1
     fi
-    echo "Waiting for Mautic... ($counter/${timeout}s)"
+    
+    # Show progress and diagnostics every 60 seconds
+    if [ $((counter % 60)) -eq 0 ] && [ $counter -gt 0 ]; then
+        echo "📊 Progress update at ${counter}s:"
+        echo "  - Container status:"
+        $DOCKER_COMPOSE_CMD ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+        echo "  - Recent Mautic logs:"
+        docker logs mautic_app --tail 5 --since 60s 2>/dev/null || echo "    No recent logs"
+        echo "  - HTTP response test:"
+        curl -s -o /dev/null -w "    HTTP Status: %{http_code}, Response time: %{time_total}s\n" "http://localhost:${PORT}" || echo "    Connection failed"
+    fi
+    
+    echo "Waiting for Mautic... (${counter}/${timeout}s)"
     sleep 10
     counter=$((counter + 10))
 done
