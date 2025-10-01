@@ -263,10 +263,10 @@ echo "✅ Mautic is healthy"
 
 # Check if Mautic is already installed
 echo "🔍 Checking if Mautic is already installed..."
-if docker exec mautic_app test -f /var/www/html/config/local.php && docker exec mautic_app grep -q "site_url" /var/www/html/config/local.php; then
-    echo "✅ Mautic is already installed (config file exists and contains site_url)"
+if docker exec mautic_app test -f /var/www/html/config/local.php && docker exec mautic_app grep -q "site_url" /var/www/html/config/local.php 2>/dev/null; then
+    echo "✅ Mautic is already installed (config contains site_url)"
     
-    # Try to clear cache, but don't reinstall if it fails
+    # Try to clear cache, but don't fail deployment if it doesn't work
     echo "🧹 Clearing Mautic cache..."
     if docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction 2>/dev/null; then
         echo "✅ Cache cleared successfully"
@@ -282,14 +282,20 @@ else
     echo "🛑 Stopping worker container during installation..."
     docker stop mautic_worker 2>/dev/null || echo "Worker container not running"
     
+    # Debug: Check environment variables
+    echo "🔍 Environment variables for installation:"
+    echo "  EMAIL_ADDRESS: ${EMAIL_ADDRESS}"
+    echo "  IP_ADDRESS: ${IP_ADDRESS}"
+    echo "  PORT: ${PORT}"
+    
     # Install Mautic using the official installation command
-    docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
+    echo "🚀 Running mautic:install command..."
+    if docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
         --force \
         --admin_email="${EMAIL_ADDRESS}" \
         --admin_password="${MAUTIC_PASSWORD}" \
-        "http://${IP_ADDRESS}:${PORT}"
-
-    if [ $? -eq 0 ]; then
+        "http://${IP_ADDRESS}:${PORT}"; then
+        
         echo "✅ Mautic installation completed"
         
         # Restart worker container after installation
@@ -300,7 +306,17 @@ else
         echo "🧹 Clearing Mautic cache..."
         docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
     else
-        echo "⚠️ Mautic installation may have failed, checking application status..."
+        echo "❌ Mautic installation failed"
+        echo "🔍 Debug: Checking if local.php was created during failed installation..."
+        if docker exec mautic_app test -f /var/www/html/config/local.php; then
+            echo "� local.php was created but installation failed. Contents:"
+            docker exec mautic_app cat /var/www/html/config/local.php || echo "Cannot read local.php"
+        else
+            echo "� No local.php file found after failed installation"
+        fi
+        echo "📋 Recent Mautic logs:"
+        docker logs mautic_app --tail 20 2>/dev/null || echo "No logs available"
+        exit 1
     fi
 fi
 
