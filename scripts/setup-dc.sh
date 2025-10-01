@@ -209,85 +209,92 @@ EOF
 # Install cron jobs
 crontab cron/mautic
 
-# Start containers first
-echo "🚀 Starting Docker containers..."
+# Start containers and wait for them to be healthy
+echo "🚀 Starting Docker containers with health checks..."
 $DOCKER_COMPOSE_CMD up -d
 
-# Wait for services to be ready
-echo "⏳ Waiting for services to start..."
-sleep 30
-
-# Wait for containers to be healthy
-echo "🏥 Checking container health..."
-container_timeout=180
-container_counter=0
-while ! docker ps --filter "name=mautic_app" --filter "status=running" --quiet | grep -q .; do
-    if [ $container_counter -ge $container_timeout ]; then
-        echo "❌ Mautic container failed to start properly"
+# Wait for MySQL to be healthy
+echo "⏳ Waiting for MySQL to be healthy..."
+timeout=180
+counter=0
+while [ "$(docker inspect --format='{{.State.Health.Status}}' mautic_mysql 2>/dev/null)" != "healthy" ]; do
+    if [ $counter -ge $timeout ]; then
+        echo "❌ MySQL health check timeout"
         echo "📊 Container status:"
         $DOCKER_COMPOSE_CMD ps
-        echo "📋 Container logs:"
-        docker logs mautic_app --tail 50 2>/dev/null || echo "No logs available"
+        echo "📋 MySQL logs:"
+        docker logs mautic_mysql --tail 20 2>/dev/null || echo "No logs available"
         exit 1
     fi
-    echo "Waiting for Mautic container to be running... (${container_counter}/${container_timeout}s)"
-    sleep 10
-    container_counter=$((container_counter + 10))
-done
-echo "✅ Mautic container is running"
-
-# Check MySQL connection
-echo "🔍 Checking MySQL connection..."
-timeout=120
-counter=0
-while ! docker exec mautic_mysql mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1;" > /dev/null 2>&1; do
-    if [ $counter -ge $timeout ]; then
-        echo "❌ MySQL connection timeout"
-        exit 1
-    fi
-    echo "Waiting for MySQL... ($counter/${timeout}s)"
+    echo "Waiting for MySQL health check... (${counter}/${timeout}s)"
     sleep 5
     counter=$((counter + 5))
 done
-echo "✅ MySQL is ready"
+echo "✅ MySQL is healthy"
 
-# Wait for Mautic files to be ready
-echo "📁 Waiting for Mautic files to be initialized..."
-mautic_timeout=300
-mautic_counter=0
-while ! docker exec mautic_app test -f /var/www/html/bin/console; do
-    if [ $mautic_counter -ge $mautic_timeout ]; then
-        echo "❌ Timeout waiting for Mautic files to be ready"
-        echo "📋 Mautic container logs:"
+# Wait for Mautic to be healthy  
+echo "⏳ Waiting for Mautic to be healthy..."
+timeout=300
+counter=0
+while [ "$(docker inspect --format='{{.State.Health.Status}}' mautic_app 2>/dev/null)" != "healthy" ]; do
+    if [ $counter -ge $timeout ]; then
+        echo "❌ Mautic health check timeout"
+        echo "📊 Container status:"
+        $DOCKER_COMPOSE_CMD ps
+        echo "📋 Mautic logs:"
         docker logs mautic_app --tail 30 2>/dev/null || echo "No logs available"
-        echo "📁 Directory contents:"
-        docker exec mautic_app ls -la /var/www/html/ 2>/dev/null || echo "Cannot access directory"
         exit 1
     fi
     
     # Show progress every 30 seconds
-    if [ $((mautic_counter % 30)) -eq 0 ] && [ $mautic_counter -gt 0 ]; then
-        echo "📊 File initialization progress:"
-        echo "  - Container status: $(docker inspect --format='{{.State.Status}}' mautic_app 2>/dev/null || echo 'unknown')"
-        echo "  - Directory contents:"
-        docker exec mautic_app ls -la /var/www/html/ 2>/dev/null | head -10 || echo "    Cannot access directory"
-        echo "  - Recent logs:"
+    if [ $((counter % 30)) -eq 0 ] && [ $counter -gt 0 ]; then
+        echo "📊 Health check progress:"
+        echo "  - MySQL: $(docker inspect --format='{{.State.Health.Status}}' mautic_mysql 2>/dev/null || echo 'unknown')"
+        echo "  - Mautic: $(docker inspect --format='{{.State.Health.Status}}' mautic_app 2>/dev/null || echo 'unknown')"
+        echo "  - Recent Mautic logs:"
         docker logs mautic_app --tail 3 --since 30s 2>/dev/null || echo "    No recent logs"
     fi
     
-    echo "Waiting for Mautic files... (${mautic_counter}/${mautic_timeout}s)"
+    echo "Waiting for Mautic health check... (${counter}/${timeout}s)"
     sleep 10
-    mautic_counter=$((mautic_counter + 10))
+    counter=$((counter + 10))
 done
-echo "✅ Mautic files are ready"
+echo "✅ Mautic is healthy"
 
 # Check if Mautic is already installed
 echo "🔍 Checking if Mautic is already installed..."
 if docker exec mautic_app test -f /var/www/html/config/local.php; then
-    echo "✅ Mautic appears to be already configured"
-    # Still run cache clear to ensure everything is fresh
-    echo "🧹 Clearing Mautic cache..."
-    docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
+    echo "✅ Mautic configuration file exists"
+    
+    # Check if the local.php file is valid
+    if docker exec mautic_app php -l /var/www/html/config/local.php > /dev/null 2>&1; then
+        echo "✅ Mautic configuration is valid"
+        # Still run cache clear to ensure everything is fresh
+        echo "🧹 Clearing Mautic cache..."
+        docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
+    else
+        echo "⚠️ Mautic configuration file is corrupted, recreating..."
+        docker exec mautic_app rm -f /var/www/html/config/local.php
+        echo "🔧 Running Mautic installation..."
+        docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
+            --db_driver=pdo_mysql \
+            --db_host=mysql \
+            --db_port=3306 \
+            --db_name="${MYSQL_DATABASE}" \
+            --db_user="${MYSQL_USER}" \
+            --db_password="${MYSQL_PASSWORD}" \
+            --admin_email="${EMAIL_ADDRESS}" \
+            --admin_password="${MAUTIC_PASSWORD}" \
+            --admin_firstname="Admin" \
+            --admin_lastname="User" \
+            --force --no-interaction
+        
+        if [ $? -eq 0 ]; then
+            echo "✅ Mautic installation completed"
+        else
+            echo "⚠️ Mautic installation may have failed, checking application status..."
+        fi
+    fi
 else
     # Install Mautic if not already installed
     echo "🔧 Installing Mautic..."
@@ -306,13 +313,12 @@ else
 
     if [ $? -eq 0 ]; then
         echo "✅ Mautic installation completed"
+        # Clear cache after installation
+        echo "🧹 Clearing Mautic cache..."
+        docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
     else
         echo "⚠️ Mautic installation may have failed, checking application status..."
     fi
-
-    # Clear cache after installation
-    echo "🧹 Clearing Mautic cache..."
-    docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
 fi
 
 # Set proper permissions
@@ -350,55 +356,20 @@ if [ -n "$MAUTIC_THEMES" ] || [ -n "$MAUTIC_PLUGINS" ]; then
     docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
 fi
 
-# Check Mautic application
-echo "🔍 Checking Mautic application..."
-echo "📊 Container status:"
-$DOCKER_COMPOSE_CMD ps
+# Final HTTP verification
+echo "🔍 Verifying Mautic HTTP response..."
+http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT}" 2>/dev/null || echo "000")
 
-echo "📋 Checking Mautic logs for startup progress..."
-docker logs mautic_app --tail 20 2>/dev/null || echo "⚠️ Unable to fetch Mautic logs"
-
-timeout=600  # Increased to 10 minutes for Mautic initialization
-counter=0
-while true; do
-    if [ $counter -ge $timeout ]; then
-        echo "❌ Mautic application timeout after ${timeout} seconds"
-        echo "🔍 Final diagnostics:"
-        echo "📊 Container status:"
-        $DOCKER_COMPOSE_CMD ps
-        echo "📋 Mautic application logs (last 50 lines):"
-        docker logs mautic_app --tail 50 2>/dev/null || echo "No logs available"
-        echo "📋 MySQL logs (last 20 lines):"
-        docker logs mautic_mysql --tail 20 2>/dev/null || echo "No logs available"
-        echo "🌐 Network connectivity test:"
-        curl -v "http://localhost:${PORT}" || true
-        exit 1
+if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
+    echo "✅ Mautic is responding correctly (HTTP ${http_code})"
+    if [ "$http_code" = "302" ]; then
+        echo "   → Mautic is redirecting to login page (normal behavior)"
     fi
-    
-    # Check HTTP response
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT}" 2>/dev/null || echo "000")
-    
-    # Accept 200 (success) or 302 (redirect to login) as success
-    if [ "$http_code" = "200" ] || [ "$http_code" = "302" ]; then
-        echo "✅ Mautic is ready (HTTP ${http_code})"
-        break
-    fi
-    
-    # Show progress and diagnostics every 60 seconds
-    if [ $((counter % 60)) -eq 0 ] && [ $counter -gt 0 ]; then
-        echo "📊 Progress update at ${counter}s:"
-        echo "  - Container status:"
-        $DOCKER_COMPOSE_CMD ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
-        echo "  - Recent Mautic logs:"
-        docker logs mautic_app --tail 5 --since 60s 2>/dev/null || echo "    No recent logs"
-        echo "  - HTTP response test:"
-        echo "    HTTP Status: ${http_code}, Response time: $(curl -s -o /dev/null -w "%{time_total}s" "http://localhost:${PORT}" 2>/dev/null || echo 'N/A')"
-    fi
-    
-    echo "Waiting for Mautic... (${counter}/${timeout}s) [HTTP: ${http_code}]"
-    sleep 10
-    counter=$((counter + 10))
-done
+else
+    echo "⚠️ Unexpected HTTP response: ${http_code}"
+    echo "📋 Recent Mautic logs:"
+    docker logs mautic_app --tail 10 2>/dev/null || echo "No logs available"
+fi
 
 # Setup SSL if domain is provided
 if [ -n "$DOMAIN_NAME" ]; then
@@ -433,7 +404,7 @@ echo ""
 echo "🎉 Mautic setup completed successfully!"
 echo "====================================="
 echo "📊 Service Status:"
-docker-compose ps
+$DOCKER_COMPOSE_CMD ps
 
 echo ""
 echo "🌐 Access Information:"

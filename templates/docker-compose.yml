@@ -11,6 +11,12 @@ services:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: mysqladmin --user=$$MYSQL_USER --password=$$MYSQL_PASSWORD ping
+      start_period: 5s
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - mautic
 
@@ -18,7 +24,8 @@ services:
     image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
     container_name: mautic_app
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     ports:
       - "${PORT:-8001}:80"
     environment:
@@ -35,6 +42,12 @@ services:
       - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs
     restart: unless-stopped
+    healthcheck:
+      test: curl --fail http://localhost || exit 1
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - mautic
 
@@ -43,8 +56,8 @@ services:
     image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
     container_name: mautic_worker
     depends_on:
-      - mysql
-      - mautic
+      mautic:
+        condition: service_healthy
     environment:
       - MAUTIC_DB_HOST=mysql
       - MAUTIC_DB_USER=${MYSQL_USER}
