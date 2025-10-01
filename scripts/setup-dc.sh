@@ -223,7 +223,7 @@ else
 # Database Configuration
 MAUTIC_DB_HOST=mysql
 MAUTIC_DB_PORT=3306
-MAUTIC_DB_NAME=${MYSQL_DATABASE}
+MAUTIC_DB_DATABASE=${MYSQL_DATABASE}
 MAUTIC_DB_USER=${MYSQL_USER}
 MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
 
@@ -277,7 +277,7 @@ echo "  - .env ($(wc -l < .env) lines)"
 echo "  - .mautic_env ($(wc -l < .mautic_env) lines)"
 
 # Verify required variables in .mautic_env
-required_vars=("MAUTIC_DB_HOST" "MAUTIC_DB_NAME" "MAUTIC_DB_USER" "MAUTIC_ADMIN_EMAIL")
+required_vars=("MAUTIC_DB_HOST" "MAUTIC_DB_DATABASE" "MAUTIC_DB_USER" "MAUTIC_ADMIN_EMAIL")
 for var in "${required_vars[@]}"; do
     if ! grep -q "^${var}=" .mautic_env; then
         echo "❌ Error: Required variable $var not found in .mautic_env"
@@ -417,7 +417,7 @@ else
     echo "  PORT: ${PORT}"
     echo "  MAUTIC_DB_HOST: $(docker exec mautic_app printenv MAUTIC_DB_HOST 2>/dev/null || echo 'not set')"
     echo "  MAUTIC_DB_USER: $(docker exec mautic_app printenv MAUTIC_DB_USER 2>/dev/null || echo 'not set')"
-    echo "  MAUTIC_DB_NAME: $(docker exec mautic_app printenv MAUTIC_DB_NAME 2>/dev/null || echo 'not set')"
+    echo "  MAUTIC_DB_DATABASE: $(docker exec mautic_app printenv MAUTIC_DB_DATABASE 2>/dev/null || echo 'not set')"
     echo "  MAUTIC_ADMIN_EMAIL: $(docker exec mautic_app printenv MAUTIC_ADMIN_EMAIL 2>/dev/null || echo 'not set')"
     echo "  DOCKER_MAUTIC_ROLE: $(docker exec mautic_app printenv DOCKER_MAUTIC_ROLE 2>/dev/null || echo 'not set')"
     
