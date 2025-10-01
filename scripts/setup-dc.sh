@@ -209,6 +209,32 @@ fi
 # Secure the .mautic_env file
 chmod 600 .mautic_env
 
+# Validate environment files before starting containers
+echo "🔍 Validating environment configuration..."
+if [ ! -f ".mautic_env" ]; then
+    echo "❌ Error: .mautic_env file not found"
+    exit 1
+fi
+
+if [ ! -f ".env" ]; then
+    echo "❌ Error: .env file not found"
+    exit 1
+fi
+
+echo "📋 Environment files present:"
+echo "  - .env ($(wc -l < .env) lines)"
+echo "  - .mautic_env ($(wc -l < .mautic_env) lines)"
+
+# Verify required variables in .mautic_env
+required_vars=("MAUTIC_DB_HOST" "MAUTIC_DB_NAME" "MAUTIC_DB_USER" "MAUTIC_ADMIN_EMAIL")
+for var in "${required_vars[@]}"; do
+    if ! grep -q "^${var}=" .mautic_env; then
+        echo "❌ Error: Required variable $var not found in .mautic_env"
+        exit 1
+    fi
+done
+echo "✅ Environment validation completed"
+
 # Create main environment file for Docker Compose
 echo "🗄️  Creating Docker Compose environment file..."
 cat > .env << EOF
@@ -241,9 +267,20 @@ EOF
 # Install cron jobs
 crontab cron/mautic
 
-# Start containers and wait for them to be healthy
+# Start containers and wait for them to be healthy (excluding worker initially)
 echo "🚀 Starting Docker containers with health checks..."
-$DOCKER_COMPOSE_CMD up -d
+if ! $DOCKER_COMPOSE_CMD up -d db mautic; then
+    echo "❌ Failed to start containers"
+    echo "📊 Docker Compose status:"
+    $DOCKER_COMPOSE_CMD ps || true
+    echo "📋 Docker logs:"
+    docker logs --tail 10 $(docker ps -aq) 2>/dev/null || echo "No container logs available"
+    exit 1
+fi
+
+echo "✅ Containers started successfully"
+echo "📊 Container status:"
+$DOCKER_COMPOSE_CMD ps
 
 # Wait for MySQL to be healthy
 echo "⏳ Waiting for MySQL to be healthy..."
@@ -310,9 +347,8 @@ else
     # Install Mautic if not already installed
     echo "🔧 Installing Mautic..."
     
-    # Stop worker container to avoid installation conflicts
-    echo "🛑 Stopping worker container during installation..."
-    docker stop mautic_worker 2>/dev/null || echo "Worker container not running"
+    # Note: Worker container is not started during initial deployment due to profile configuration
+    echo "ℹ️ Worker container will be started after successful installation..."
     
     # Remove any corrupted local.php file that might exist
     echo "🧹 Cleaning up any existing configuration files..."
@@ -358,9 +394,9 @@ else
         
         echo "✅ Mautic installation completed"
         
-        # Restart worker container after installation
-        echo "🔄 Restarting worker container..."
-        docker start mautic_worker || echo "⚠️ Failed to restart worker container"
+        # Start worker container after successful installation
+        echo "🔄 Starting worker container..."
+        $DOCKER_COMPOSE_CMD --profile worker up -d mautic_worker || echo "⚠️ Failed to start worker container"
         
         # Clear cache after installation
         echo "🧹 Clearing Mautic cache..."
