@@ -56,6 +56,12 @@ echo "✅ Configuration validated"
 echo "📦 Installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 
+# Proactively stop unattended-upgrades to prevent lock conflicts
+echo "🛑 Stopping unattended-upgrades to prevent lock conflicts..."
+systemctl stop unattended-upgrades || true
+systemctl disable unattended-upgrades || true
+pkill -f unattended-upgrade || true
+
 # Wait for apt locks to be released
 echo "🔒 Checking for apt locks..."
 timeout=300
@@ -64,9 +70,23 @@ while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/
     if [ $counter -ge $timeout ]; then
         echo "❌ Timeout waiting for apt locks to be released"
         echo "🔍 Current apt processes:"
-        ps aux | grep -E "(apt|dpkg)" | grep -v grep || true
-        exit 1
+        ps aux | grep -E "(apt|dpkg|unattended)" | grep -v grep || true
+        echo "⚠️ Attempting to stop unattended-upgrades and remove locks..."
+        pkill -f unattended-upgrade || true
+        systemctl stop unattended-upgrades || true
+        sleep 5
+        rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock || true
+        dpkg --configure -a || true
+        break
     fi
+    
+    # Show more detailed info every 60 seconds
+    if [ $((counter % 60)) -eq 0 ] && [ $counter -gt 0 ]; then
+        echo "🔍 Checking what's holding the lock:"
+        ps aux | grep -E "(apt|dpkg|unattended)" | grep -v grep || echo "No apt/dpkg processes found"
+        lsof /var/lib/dpkg/lock-frontend 2>/dev/null || echo "No processes using lock file"
+    fi
+    
     echo "⏳ Waiting for apt locks to be released... ($counter/${timeout}s)"
     sleep 10
     counter=$((counter + 10))
@@ -95,10 +115,27 @@ for package in "${packages[@]}"; do
                 if [ $retry_count -lt $max_retries ]; then
                     echo "⚠️ Failed to install $package (attempt $retry_count/$max_retries), retrying in 10 seconds..."
                     sleep 10
-                    # Check for locks again
+                    # Check for locks again with timeout and aggressive handling
+                    lock_wait_counter=0
+                    max_lock_wait=120  # 2 minutes
                     while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-                        echo "⏳ Waiting for dpkg lock..."
+                        if [ $lock_wait_counter -ge $max_lock_wait ]; then
+                            echo "⚠️ dpkg lock held too long, attempting to stop unattended-upgrades..."
+                            # Kill unattended-upgrades if it's running
+                            pkill -f unattended-upgrade || true
+                            systemctl stop unattended-upgrades || true
+                            sleep 10
+                            # Force remove lock if still present
+                            if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+                                echo "⚠️ Forcefully removing dpkg locks..."
+                                rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock || true
+                                dpkg --configure -a || true
+                            fi
+                            break
+                        fi
+                        echo "⏳ Waiting for dpkg lock... (${lock_wait_counter}/${max_lock_wait}s)"
                         sleep 5
+                        lock_wait_counter=$((lock_wait_counter + 5))
                     done
                 else
                     echo "❌ Failed to install $package after $max_retries attempts"
