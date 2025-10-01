@@ -37,7 +37,7 @@ services:
       - MAUTIC_ADMIN_PASSWORD=${MAUTIC_PASSWORD}
       - MAUTIC_ADMIN_FIRSTNAME=Admin
       - MAUTIC_ADMIN_LASTNAME=User
-      - MAUTIC_TRUSTED_PROXIES=0.0.0.0/0
+      - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
     volumes:
       - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs

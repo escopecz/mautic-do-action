@@ -263,59 +263,39 @@ echo "✅ Mautic is healthy"
 
 # Check if Mautic is already installed
 echo "🔍 Checking if Mautic is already installed..."
-if docker exec mautic_app test -f /var/www/html/config/local.php; then
-    echo "✅ Mautic configuration file exists"
+if docker exec mautic_app test -f /var/www/html/config/local.php && docker exec mautic_app grep -q "site_url" /var/www/html/config/local.php; then
+    echo "✅ Mautic is already installed (config file exists and contains site_url)"
     
-    # Check if the local.php file is valid by testing for the specific error
-    if docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction 2>&1 | grep -q "Path cannot be empty"; then
-        echo "⚠️ Mautic configuration file is corrupted (empty path error), recreating..."
-        docker exec mautic_app rm -f /var/www/html/config/local.php
-        echo "🔧 Running Mautic installation..."
-        docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
-            --db_driver=pdo_mysql \
-            --db_host=mysql \
-            --db_port=3306 \
-            --db_name="${MYSQL_DATABASE}" \
-            --db_user="${MYSQL_USER}" \
-            --db_password="${MYSQL_PASSWORD}" \
-            --admin_email="${EMAIL_ADDRESS}" \
-            --admin_password="${MAUTIC_PASSWORD}" \
-            --admin_firstname="Admin" \
-            --admin_lastname="User" \
-            --force --no-interaction
-        
-        if [ $? -eq 0 ]; then
-            echo "✅ Mautic installation completed"
-            # Clear cache after installation
-            echo "🧹 Clearing Mautic cache..."
-            docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
-        else
-            echo "⚠️ Mautic installation may have failed, checking application status..."
-        fi
+    # Try to clear cache, but don't reinstall if it fails
+    echo "🧹 Clearing Mautic cache..."
+    if docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction 2>/dev/null; then
+        echo "✅ Cache cleared successfully"
     else
-        echo "✅ Mautic configuration is valid"
-        # Still run cache clear to ensure everything is fresh
-        echo "🧹 Clearing Mautic cache..."
-        docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed (but installation appears successful)"
+        echo "⚠️ Cache clear failed, but Mautic appears to be installed"
+        echo "   This is usually not critical for a running Mautic instance"
     fi
 else
     # Install Mautic if not already installed
     echo "🔧 Installing Mautic..."
+    
+    # Stop worker container to avoid installation conflicts
+    echo "🛑 Stopping worker container during installation..."
+    docker stop mautic_worker 2>/dev/null || echo "Worker container not running"
+    
+    # Install Mautic using the official installation command
     docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
-        --db_driver=pdo_mysql \
-        --db_host=mysql \
-        --db_port=3306 \
-        --db_name="${MYSQL_DATABASE}" \
-        --db_user="${MYSQL_USER}" \
-        --db_password="${MYSQL_PASSWORD}" \
+        --force \
         --admin_email="${EMAIL_ADDRESS}" \
         --admin_password="${MAUTIC_PASSWORD}" \
-        --admin_firstname="Admin" \
-        --admin_lastname="User" \
-        --force --no-interaction
+        "http://${IP_ADDRESS}:${PORT}"
 
     if [ $? -eq 0 ]; then
         echo "✅ Mautic installation completed"
+        
+        # Restart worker container after installation
+        echo "🔄 Restarting worker container..."
+        docker start mautic_worker || echo "⚠️ Failed to restart worker container"
+        
         # Clear cache after installation
         echo "🧹 Clearing Mautic cache..."
         docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
