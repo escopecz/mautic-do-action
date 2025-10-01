@@ -166,29 +166,61 @@ if [ -f docker-compose.yml ]; then
     $DOCKER_COMPOSE_CMD down || true
 fi
 
-# Create Mautic environment file
-echo "⚙️  Creating Mautic environment file..."
-cat > .mautic_env << EOF
-# Mautic Configuration
+# Create Mautic environment file from template (following official example pattern)
+echo "🗄️  Creating Mautic environment file from template..."
+
+if [ -f ".mautic_env.template" ]; then
+    # Process template file and replace placeholders
+    sed -e "s/MYSQL_DATABASE_PLACEHOLDER/${MYSQL_DATABASE}/g" \
+        -e "s/MYSQL_USER_PLACEHOLDER/${MYSQL_USER}/g" \
+        -e "s/MYSQL_PASSWORD_PLACEHOLDER/${MYSQL_PASSWORD}/g" \
+        -e "s/EMAIL_ADDRESS_PLACEHOLDER/${EMAIL_ADDRESS}/g" \
+        -e "s/MAUTIC_PASSWORD_PLACEHOLDER/${MAUTIC_PASSWORD}/g" \
+        ".mautic_env.template" > ".mautic_env"
+    
+    echo "✅ .mautic_env file created from template"
+else
+    # Fallback: create .mautic_env directly if template not found
+    echo "⚠️ Template not found, creating .mautic_env directly..."
+    cat > .mautic_env << EOF
+# Database Configuration
 MAUTIC_DB_HOST=mysql
+MAUTIC_DB_PORT=3306
+MAUTIC_DB_NAME=${MYSQL_DATABASE}
 MAUTIC_DB_USER=${MYSQL_USER}
 MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
-MAUTIC_DB_NAME=${MYSQL_DATABASE}
+
+# Admin User Configuration
 MAUTIC_ADMIN_EMAIL=${EMAIL_ADDRESS}
 MAUTIC_ADMIN_PASSWORD=${MAUTIC_PASSWORD}
 MAUTIC_ADMIN_FIRSTNAME=Admin
 MAUTIC_ADMIN_LASTNAME=User
-MAUTIC_TRUSTED_PROXIES=0.0.0.0/0
-MAUTIC_VERSION=${MAUTIC_VERSION}
-EOF
 
-# Create MySQL environment file
-echo "🗄️  Creating MySQL environment file..."
-cat > .mysql_env << EOF
+# Mautic Configuration
+MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
+MAUTIC_RUN_CRON_JOBS=true
+
+# Installation Configuration
+MAUTIC_DB_PREFIX=
+MAUTIC_INSTALL_FORCE=true
+EOF
+fi
+
+# Secure the .mautic_env file
+chmod 600 .mautic_env
+
+# Create main environment file for Docker Compose
+echo "🗄️  Creating Docker Compose environment file..."
+cat > .env << EOF
+# MySQL Configuration
 MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
 MYSQL_DATABASE=${MYSQL_DATABASE}
 MYSQL_USER=${MYSQL_USER}
 MYSQL_PASSWORD=${MYSQL_PASSWORD}
+
+# Mautic Configuration
+MAUTIC_VERSION=${MAUTIC_VERSION}
+PORT=${PORT}
 EOF
 
 # Setup cron job
@@ -282,11 +314,39 @@ else
     echo "🛑 Stopping worker container during installation..."
     docker stop mautic_worker 2>/dev/null || echo "Worker container not running"
     
-    # Debug: Check environment variables
+    # Remove any corrupted local.php file that might exist
+    echo "🧹 Cleaning up any existing configuration files..."
+    docker exec mautic_app rm -f /var/www/html/config/local.php || echo "No local.php to remove"
+    
+    # Restart Mautic container to regenerate configuration with proper environment variables
+    echo "🔄 Restarting Mautic container to regenerate configuration..."
+    $DOCKER_COMPOSE_CMD restart mautic
+    
+    # Wait for Mautic to be healthy again after restart
+    echo "⏳ Waiting for Mautic to be healthy after restart..."
+    timeout=120
+    counter=0
+    while [ "$(docker inspect --format='{{.State.Health.Status}}' mautic_app 2>/dev/null)" != "healthy" ]; do
+        if [ $counter -ge $timeout ]; then
+            echo "❌ Mautic health check timeout after restart"
+            exit 1
+        fi
+        echo "Waiting for Mautic health check... (${counter}/${timeout}s)"
+        sleep 5
+        counter=$((counter + 5))
+    done
+    echo "✅ Mautic is healthy after restart"
+    
+    # Debug: Check environment variables in container
     echo "🔍 Environment variables for installation:"
     echo "  EMAIL_ADDRESS: ${EMAIL_ADDRESS}"
     echo "  IP_ADDRESS: ${IP_ADDRESS}"
     echo "  PORT: ${PORT}"
+    echo "  MAUTIC_DB_HOST: $(docker exec mautic_app printenv MAUTIC_DB_HOST 2>/dev/null || echo 'not set')"
+    echo "  MAUTIC_DB_USER: $(docker exec mautic_app printenv MAUTIC_DB_USER 2>/dev/null || echo 'not set')"
+    echo "  MAUTIC_DB_NAME: $(docker exec mautic_app printenv MAUTIC_DB_NAME 2>/dev/null || echo 'not set')"
+    echo "  MAUTIC_ADMIN_EMAIL: $(docker exec mautic_app printenv MAUTIC_ADMIN_EMAIL 2>/dev/null || echo 'not set')"
+    echo "  DOCKER_MAUTIC_ROLE: $(docker exec mautic_app printenv DOCKER_MAUTIC_ROLE 2>/dev/null || echo 'not set')"
     
     # Install Mautic using the official installation command
     echo "🚀 Running mautic:install command..."
@@ -426,6 +486,6 @@ echo "⚙️  Management Commands:"
 echo "  View logs: $DOCKER_COMPOSE_CMD logs -f"
 echo "  Restart services: $DOCKER_COMPOSE_CMD restart"
 echo "  Stop services: $DOCKER_COMPOSE_CMD down"
-echo "  Update Mautic: Change MAUTIC_VERSION in .mautic_env and run $DOCKER_COMPOSE_CMD up -d"
+echo "  Update Mautic: Change MAUTIC_VERSION in .env and run $DOCKER_COMPOSE_CMD up -d"
 
 echo "Setup completed at: $(date)"

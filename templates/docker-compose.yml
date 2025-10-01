@@ -1,5 +1,5 @@
 services:
-  mysql:
+  db:
     image: mysql:8.0
     container_name: mautic_mysql
     environment:
@@ -24,20 +24,16 @@ services:
     image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
     container_name: mautic_app
     depends_on:
-      mysql:
+      db:
         condition: service_healthy
+    links:
+      - db:mysql
     ports:
       - "${PORT:-8001}:80"
+    env_file:
+      - .mautic_env
     environment:
-      - MAUTIC_DB_HOST=mysql
-      - MAUTIC_DB_USER=${MYSQL_USER}
-      - MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
-      - MAUTIC_DB_NAME=${MYSQL_DATABASE}
-      - MAUTIC_ADMIN_EMAIL=${EMAIL_ADDRESS}
-      - MAUTIC_ADMIN_PASSWORD=${MAUTIC_PASSWORD}
-      - MAUTIC_ADMIN_FIRSTNAME=Admin
-      - MAUTIC_ADMIN_LASTNAME=User
-      - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
+      - DOCKER_MAUTIC_ROLE=mautic_web
     volumes:
       - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs
@@ -58,11 +54,12 @@ services:
     depends_on:
       mautic:
         condition: service_healthy
+    links:
+      - db:mysql
+    env_file:
+      - .mautic_env
     environment:
-      - MAUTIC_DB_HOST=mysql
-      - MAUTIC_DB_USER=${MYSQL_USER}
-      - MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
-      - MAUTIC_DB_NAME=${MYSQL_DATABASE}
+      - DOCKER_MAUTIC_ROLE=mautic_worker
     volumes:
       - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs

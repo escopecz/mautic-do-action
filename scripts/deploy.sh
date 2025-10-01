@@ -207,10 +207,10 @@ echo "🔒 Environment file secured with restricted permissions"
 # Copy templates to current directory for deployment
 cp "${ACTION_PATH}/templates/docker-compose.yml" .
 cp "${ACTION_PATH}/scripts/setup-dc.sh" .
-cp "${ACTION_PATH}/templates/.mautic_env" .
+cp "${ACTION_PATH}/templates/.mautic_env.template" .
 
 echo "📁 Files prepared for deployment:"
-ls -la deploy.env docker-compose.yml setup-dc.sh .mautic_env
+ls -la deploy.env docker-compose.yml setup-dc.sh .mautic_env.template
 
 # Deploy to server
 echo "🚀 Deploying to server..."
