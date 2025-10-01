@@ -157,7 +157,7 @@ systemctl enable docker
 
 # Create directory structure
 echo "📁 Creating directory structure..."
-mkdir -p /var/www/{mautic_data,mysql_data,logs}
+mkdir -p /var/www/logs
 cd /var/www
 
 # Stop any existing containers
@@ -425,8 +425,8 @@ fi
 
 # Set correct permissions
 echo "🔐 Setting permissions..."
-chown -R www-data:www-data /var/www/mautic_data
-chmod -R 755 /var/www/mautic_data
+chown -R www-data:www-data /var/www/logs
+chmod -R 755 /var/www/logs
 
 # Display final status
 echo ""
@@ -447,8 +447,8 @@ echo "  Admin Password: ${MAUTIC_PASSWORD}"
 
 echo ""
 echo "📁 Data Locations:"
-echo "  Mautic Data: /var/www/mautic_data"
-echo "  MySQL Data: /var/www/mysql_data"
+echo "  Mautic Data: Docker volume 'mautic_data'"
+echo "  MySQL Data: Docker volume 'mysql_data'"
 echo "  Logs: /var/www/logs"
 
 echo ""

@@ -8,7 +8,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
-      - ./mysql_data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password
     networks:
@@ -32,7 +32,7 @@ services:
       - MAUTIC_ADMIN_LASTNAME=User
       - MAUTIC_TRUSTED_PROXIES=0.0.0.0/0
     volumes:
-      - ./mautic_data:/var/www/html
+      - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs
     restart: unless-stopped
     networks:
@@ -51,12 +51,16 @@ services:
       - MAUTIC_DB_PASSWORD=${MYSQL_PASSWORD}
       - MAUTIC_DB_NAME=${MYSQL_DATABASE}
     volumes:
-      - ./mautic_data:/var/www/html
+      - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs
     command: php /var/www/html/bin/console messenger:consume email async priority normal --limit=10 --memory-limit=512M
     restart: unless-stopped
     networks:
       - mautic
+
+volumes:
+  mautic_data:
+  mysql_data:
 
 networks:
   mautic:
