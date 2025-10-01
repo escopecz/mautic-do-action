@@ -266,14 +266,9 @@ echo "🔍 Checking if Mautic is already installed..."
 if docker exec mautic_app test -f /var/www/html/config/local.php; then
     echo "✅ Mautic configuration file exists"
     
-    # Check if the local.php file is valid
-    if docker exec mautic_app php -l /var/www/html/config/local.php > /dev/null 2>&1; then
-        echo "✅ Mautic configuration is valid"
-        # Still run cache clear to ensure everything is fresh
-        echo "🧹 Clearing Mautic cache..."
-        docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
-    else
-        echo "⚠️ Mautic configuration file is corrupted, recreating..."
+    # Check if the local.php file is valid by testing for the specific error
+    if docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction 2>&1 | grep -q "Path cannot be empty"; then
+        echo "⚠️ Mautic configuration file is corrupted (empty path error), recreating..."
         docker exec mautic_app rm -f /var/www/html/config/local.php
         echo "🔧 Running Mautic installation..."
         docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
@@ -291,9 +286,17 @@ if docker exec mautic_app test -f /var/www/html/config/local.php; then
         
         if [ $? -eq 0 ]; then
             echo "✅ Mautic installation completed"
+            # Clear cache after installation
+            echo "🧹 Clearing Mautic cache..."
+            docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
         else
             echo "⚠️ Mautic installation may have failed, checking application status..."
         fi
+    else
+        echo "✅ Mautic configuration is valid"
+        # Still run cache clear to ensure everything is fresh
+        echo "🧹 Clearing Mautic cache..."
+        docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed (but installation appears successful)"
     fi
 else
     # Install Mautic if not already installed
