@@ -209,7 +209,21 @@ fi
 # Secure the .mautic_env file
 chmod 600 .mautic_env
 
-# Validate environment files before starting containers
+# Create main environment file for Docker Compose
+echo "🗄️  Creating Docker Compose environment file..."
+cat > .env << EOF
+# MySQL Configuration
+MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+MYSQL_DATABASE=${MYSQL_DATABASE}
+MYSQL_USER=${MYSQL_USER}
+MYSQL_PASSWORD=${MYSQL_PASSWORD}
+
+# Mautic Configuration
+MAUTIC_VERSION=${MAUTIC_VERSION}
+PORT=${PORT}
+EOF
+
+# Validate environment files after both are created
 echo "🔍 Validating environment configuration..."
 if [ ! -f ".mautic_env" ]; then
     echo "❌ Error: .mautic_env file not found"
@@ -234,20 +248,6 @@ for var in "${required_vars[@]}"; do
     fi
 done
 echo "✅ Environment validation completed"
-
-# Create main environment file for Docker Compose
-echo "🗄️  Creating Docker Compose environment file..."
-cat > .env << EOF
-# MySQL Configuration
-MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-MYSQL_DATABASE=${MYSQL_DATABASE}
-MYSQL_USER=${MYSQL_USER}
-MYSQL_PASSWORD=${MYSQL_PASSWORD}
-
-# Mautic Configuration
-MAUTIC_VERSION=${MAUTIC_VERSION}
-PORT=${PORT}
-EOF
 
 # Setup cron job
 echo "⏰ Setting up cron jobs..."
