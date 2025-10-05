@@ -260,21 +260,52 @@ scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r . root@${VPS_IP}:/var/www/
 
 # Run setup script
 echo "⚙️  Running setup script on server..."
-if ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && ./setup-dc.sh > /var/log/setup-dc.log 2>&1"; then
-    echo "✅ Setup script completed successfully"
+if ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=60 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && nohup ./setup-dc.sh > /var/log/setup-dc.log 2>&1 && echo 'SETUP_COMPLETED' >> /var/log/setup-dc.log"; then
+    echo "✅ Setup script execution started successfully"
+    
+    # Wait for completion by checking the log file
+    echo "⏳ Waiting for setup to complete (this may take several minutes)..."
+    timeout=1800  # 30 minutes timeout
+    counter=0
+    
+    while [ $counter -lt $timeout ]; do
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'SETUP_COMPLETED\|Setup completed at:' /var/log/setup-dc.log 2>/dev/null"; then
+            echo "✅ Setup script completed successfully"
+            break
+        fi
+        
+        # Show progress every 30 seconds
+        if [ $((counter % 30)) -eq 0 ] && [ $counter -gt 0 ]; then
+            echo "⏳ Still running... (${counter}/${timeout}s)"
+            # Show last few lines of log for progress
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -3 /var/log/setup-dc.log 2>/dev/null" || echo "   (log not accessible)"
+        fi
+        
+        sleep 5
+        counter=$((counter + 5))
+    done
+    
+    if [ $counter -ge $timeout ]; then
+        echo "❌ Setup script timeout after ${timeout} seconds"
+        SETUP_EXIT_CODE=124  # timeout exit code
+    else
+        SETUP_EXIT_CODE=0
+    fi
 else
     SETUP_EXIT_CODE=$?
-    echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
-    
+    echo "❌ Setup script failed to start with exit code: ${SETUP_EXIT_CODE}"
+fi
+
+if [ $SETUP_EXIT_CODE -ne 0 ]; then
     # Try to get the log file anyway
     echo "📥 Attempting to download setup log for debugging..."
-    if scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./setup-dc.log 2>/dev/null; then
+    if scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./setup-dc.log 2>/dev/null; then
         echo "📋 Setup log contents:"
-        tail -20 ./setup-dc.log
+        tail -50 ./setup-dc.log
     else
         echo "⚠️ Could not retrieve setup log, trying to get error details..."
         # Get basic error information
-        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup script permissions:'; ls -la /var/www/setup-dc.sh 2>/dev/null || echo 'setup-dc.sh not found'"
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup script permissions:'; ls -la /var/www/setup-dc.sh 2>/dev/null || echo 'setup-dc.sh not found'"
     fi
     exit 1
 fi

@@ -562,3 +562,7 @@ echo "  Stop services: $DOCKER_COMPOSE_CMD down"
 echo "  Update Mautic: Change MAUTIC_VERSION in .env and run $DOCKER_COMPOSE_CMD up -d"
 
 echo "Setup completed at: $(date)"
+echo "SETUP_COMPLETED" # Marker for deployment script
+
+# Ensure successful exit
+exit 0
