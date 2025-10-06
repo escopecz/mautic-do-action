@@ -311,12 +311,6 @@ else
     MAUTIC_URL="http://${VPS_IP}:${MAUTIC_PORT}"
 fi
 
-# Create deployment info file for validation step
-cat > deployment-info.txt << EOF
-VPS_IP=${VPS_IP}
-MAUTIC_URL=${MAUTIC_URL}
-EOF
-
 echo "vps-ip=${VPS_IP}" >> $GITHUB_OUTPUT
 echo "mautic-url=${MAUTIC_URL}" >> $GITHUB_OUTPUT
 echo "deployment-log=./setup-dc.log" >> $GITHUB_OUTPUT

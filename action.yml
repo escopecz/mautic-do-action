@@ -157,7 +157,79 @@ runs:
     - name: Create and configure VPS
       id: deploy
       shell: bash
-      run: ${{ github.action_path }}/scripts/deploy.sh
+      run: |
+        # Run the main deployment script
+        ${{ github.action_path }}/scripts/deploy.sh
+        
+        # Fail-fast validation: Check if deployment outputs were created
+        echo ""
+        echo "🔍 Validating deployment..."
+        
+        # Extract VPS IP from deployment outputs immediately
+        VPS_IP=$(grep "vps-ip=" "$GITHUB_OUTPUT" | cut -d'=' -f2-)
+        
+        # Fail fast if no VPS IP found
+        if [ -z "$VPS_IP" ] && [ -z "$INPUT_DOMAIN" ]; then
+            echo "❌ FATAL: VPS IP not found in deployment outputs"
+            echo "🔍 Deployment appears to have failed - no VPS was created"
+            echo "📋 GitHub outputs content:"
+            cat "$GITHUB_OUTPUT" 2>/dev/null || echo "No GitHub outputs file found"
+            exit 1
+        fi
+        
+        # Set the URL based on domain or IP
+        if [ -n "$INPUT_DOMAIN" ]; then
+            MAUTIC_URL="https://${INPUT_DOMAIN}"
+            echo "VPS IP: ${VPS_IP}"
+            echo "Mautic URL: ${MAUTIC_URL} (using domain)"
+        else
+            MAUTIC_PORT=${INPUT_MAUTIC_PORT:-8001}
+            MAUTIC_URL="http://${VPS_IP}:${MAUTIC_PORT}"
+            echo "VPS IP: ${VPS_IP}"
+            echo "Mautic URL: ${MAUTIC_URL}"
+        fi
+        
+        # Fail fast if URL construction failed
+        if [ -z "$MAUTIC_URL" ]; then
+            echo "❌ FATAL: Could not construct Mautic URL"
+            exit 1
+        fi
+        
+        echo "⏳ Waiting for Mautic to be ready..."
+        
+        # Test HTTP response with retries
+        MAX_ATTEMPTS=10
+        ATTEMPT=1
+        
+        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT: Testing HTTP response..."
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$MAUTIC_URL" 2>/dev/null || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+                echo "✅ Mautic is responding correctly (HTTP $HTTP_CODE)"
+                if [ "$HTTP_CODE" = "302" ]; then
+                    echo "   → Mautic is redirecting to login page (normal behavior)"
+                fi
+                echo "🎉 Deployment validation successful!"
+                break
+            else
+                echo "⚠️ Received HTTP $HTTP_CODE"
+                if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                    echo "⏳ Waiting 30 seconds before retry..."
+                    sleep 30
+                else
+                    echo "❌ Mautic failed to respond after $MAX_ATTEMPTS attempts"
+                    echo "🔍 Final troubleshooting information:"
+                    echo "  - VPS IP: ${VPS_IP}"
+                    echo "  - Mautic URL: ${MAUTIC_URL}"
+                    echo "  - Last HTTP response: ${HTTP_CODE}"
+                    exit 1
+                fi
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+        done
       env:
         INPUT_DIGITALOCEAN_TOKEN: ${{ inputs.digitalocean-token }}
         INPUT_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
@@ -183,82 +255,3 @@ runs:
       with:
         name: mautic-deployment-log
         path: ./setup-dc.log
-
-    - name: Validate deployment
-      id: validate
-      shell: bash
-      env:
-        INPUT_DIGITALOCEAN_TOKEN: ${{ inputs.digitalocean-token }}
-        INPUT_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
-        INPUT_EMAIL: ${{ inputs.email }}
-        INPUT_MAUTIC_PASSWORD: ${{ inputs.mautic-password }}
-        INPUT_MAUTIC_VERSION: ${{ inputs.mautic-version }}
-        INPUT_MAUTIC_PORT: ${{ inputs.mautic-port }}
-        INPUT_DOMAIN: ${{ inputs.domain }}
-        INPUT_VPS_NAME: ${{ inputs.vps-name }}
-        INPUT_VPS_SIZE: ${{ inputs.vps-size }}
-        INPUT_VPS_REGION: ${{ inputs.vps-region }}
-        INPUT_THEMES: ${{ inputs.themes }}
-        INPUT_PLUGINS: ${{ inputs.plugins }}
-        INPUT_MYSQL_DATABASE: ${{ inputs.mysql-database }}
-        INPUT_MYSQL_USER: ${{ inputs.mysql-user }}
-        INPUT_MYSQL_PASSWORD: ${{ inputs.mysql-password }}
-        INPUT_MYSQL_ROOT_PASSWORD: ${{ inputs.mysql-root-password }}
-        ACTION_PATH: ${{ github.action_path }}
-      run: |
-        echo "🔍 Validating deployment..."
-        
-        # Read deployment info from file created by deploy script
-        if [ -f "./deployment-info.txt" ]; then
-          echo "📋 Reading deployment information..."
-          source ./deployment-info.txt
-          echo "VPS IP: ${VPS_IP}"
-          echo "Mautic URL: ${MAUTIC_URL}"
-        else
-          echo "❌ Error: deployment-info.txt not found"
-          echo "🔍 Files in current directory:"
-          ls -la
-          exit 1
-        fi
-        
-        if [ -z "$VPS_IP" ]; then
-          echo "❌ Error: VPS IP not found in deployment info"
-          exit 1
-        fi
-        
-        if [ -z "$MAUTIC_URL" ]; then
-          echo "❌ Error: Mautic URL not found in deployment info"
-          exit 1
-        fi
-        
-        echo "⏳ Waiting for Mautic to be ready..."
-        
-        # Test HTTP response with retries
-        MAX_ATTEMPTS=10
-        ATTEMPT=1
-        
-        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-          echo "Attempt $ATTEMPT: Testing HTTP response..."
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$MAUTIC_URL" 2>/dev/null || echo "000")
-          
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "✅ Mautic is responding correctly (HTTP $HTTP_CODE)"
-            if [ "$HTTP_CODE" = "302" ]; then
-              echo "   → Mautic is redirecting to login page (normal behavior)"
-            fi
-            echo "🎉 Deployment validation successful!"
-            exit 0
-          else
-            echo "⚠️ Received HTTP $HTTP_CODE"
-            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              echo "⏳ Waiting 30 seconds before retry..."
-              sleep 30
-            fi
-          fi
-          
-          ATTEMPT=$((ATTEMPT + 1))
-        done
-        
-        echo "❌ Mautic failed to respond after $MAX_ATTEMPTS attempts"
-        exit 1
