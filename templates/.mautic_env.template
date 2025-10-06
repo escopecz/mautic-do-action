@@ -18,6 +18,9 @@ MAUTIC_ADMIN_LASTNAME=User
 MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
 MAUTIC_RUN_CRON_JOBS=true
 
+# Docker Configuration
+DOCKER_MAUTIC_ROLE=mautic_web
+
 # Installation Configuration
 MAUTIC_DB_PREFIX=
 MAUTIC_INSTALL_FORCE=true

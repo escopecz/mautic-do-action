@@ -247,6 +247,9 @@ MAUTIC_ADMIN_LASTNAME=User
 MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
 MAUTIC_RUN_CRON_JOBS=true
 
+# Docker Configuration
+DOCKER_MAUTIC_ROLE=mautic_web
+
 # Installation Configuration
 MAUTIC_DB_PREFIX=
 MAUTIC_INSTALL_FORCE=true
@@ -427,6 +430,8 @@ else
     
     # Install Mautic using the official installation command
     echo "🚀 Running mautic:install command..."
+    echo "📊 This process includes: database setup, schema creation, and admin user creation"
+    
     if docker exec -u www-data mautic_app php /var/www/html/bin/console mautic:install \
         --force \
         --admin_email="${EMAIL_ADDRESS}" \
@@ -455,6 +460,10 @@ else
         fi
         echo "📋 Recent Mautic logs:"
         docker logs mautic_app --tail 20 2>/dev/null || echo "No logs available"
+        echo "📋 Recent MySQL logs:"
+        docker logs mautic_mysql --tail 10 2>/dev/null || echo "No MySQL logs available"
+        echo "📊 MySQL container status:"
+        docker inspect --format='{{.State.Health.Status}}' mautic_mysql 2>/dev/null || echo "Health status unknown"
         exit 1
     fi
 fi
