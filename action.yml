@@ -197,35 +197,45 @@ runs:
         
         echo "⏳ Waiting for Mautic to be ready..."
         
-        # Test HTTP response with retries
+        # Test HTTP response with retries - check the login page directly
         MAX_ATTEMPTS=10
         ATTEMPT=1
         
         while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            echo "Attempt $ATTEMPT: Testing HTTP response..."
+            echo "Attempt $ATTEMPT: Testing Mautic login page..."
             
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$MAUTIC_URL" 2>/dev/null || echo "000")
+            # Test the /s/login route directly to confirm Mautic is working
+            LOGIN_URL="${MAUTIC_URL}/s/login"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null || echo "000")
             
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
-                echo "✅ Mautic is responding correctly (HTTP $HTTP_CODE)"
-                if [ "$HTTP_CODE" = "302" ]; then
-                    echo "   → Mautic is redirecting to login page (normal behavior)"
-                fi
-                echo "🎉 Deployment validation successful!"
-                break
-            else
-                echo "⚠️ Received HTTP $HTTP_CODE"
-                if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-                    echo "⏳ Waiting 30 seconds before retry..."
-                    sleep 30
+            if [ "$HTTP_CODE" = "200" ]; then
+                echo "✅ Mautic login page is responding correctly (HTTP $HTTP_CODE)"
+                
+                # Additional check: verify the response contains Mautic-specific content
+                RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null || echo "")
+                if echo "$RESPONSE" | grep -i "mautic" > /dev/null; then
+                    echo "✅ Confirmed Mautic application is running correctly"
+                    echo "🎉 Deployment validation successful!"
+                    break
                 else
-                    echo "❌ Mautic failed to respond after $MAX_ATTEMPTS attempts"
-                    echo "🔍 Final troubleshooting information:"
-                    echo "  - VPS IP: ${VPS_IP}"
-                    echo "  - Mautic URL: ${MAUTIC_URL}"
-                    echo "  - Last HTTP response: ${HTTP_CODE}"
-                    exit 1
+                    echo "⚠️ Login page responded but doesn't contain Mautic content"
+                    HTTP_CODE="000"  # Force retry
                 fi
+            else
+                echo "⚠️ Login page returned HTTP $HTTP_CODE"
+            fi
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "⏳ Waiting 30 seconds before retry..."
+                sleep 30
+            else
+                echo "❌ Mautic login page failed to respond after $MAX_ATTEMPTS attempts"
+                echo "🔍 Final troubleshooting information:"
+                echo "  - VPS IP: ${VPS_IP}"
+                echo "  - Mautic URL: ${MAUTIC_URL}"
+                echo "  - Login URL: ${LOGIN_URL}"
+                echo "  - Last HTTP response: ${HTTP_CODE}"
+                exit 1
             fi
             
             ATTEMPT=$((ATTEMPT + 1))
