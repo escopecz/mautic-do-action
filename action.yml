@@ -187,23 +187,47 @@ runs:
     - name: Validate deployment
       id: validate
       shell: bash
+      env:
+        INPUT_DIGITALOCEAN_TOKEN: ${{ inputs.digitalocean-token }}
+        INPUT_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+        INPUT_EMAIL: ${{ inputs.email }}
+        INPUT_MAUTIC_PASSWORD: ${{ inputs.mautic-password }}
+        INPUT_MAUTIC_VERSION: ${{ inputs.mautic-version }}
+        INPUT_MAUTIC_PORT: ${{ inputs.mautic-port }}
+        INPUT_DOMAIN: ${{ inputs.domain }}
+        INPUT_VPS_NAME: ${{ inputs.vps-name }}
+        INPUT_VPS_SIZE: ${{ inputs.vps-size }}
+        INPUT_VPS_REGION: ${{ inputs.vps-region }}
+        INPUT_THEMES: ${{ inputs.themes }}
+        INPUT_PLUGINS: ${{ inputs.plugins }}
+        INPUT_MYSQL_DATABASE: ${{ inputs.mysql-database }}
+        INPUT_MYSQL_USER: ${{ inputs.mysql-user }}
+        INPUT_MYSQL_PASSWORD: ${{ inputs.mysql-password }}
+        INPUT_MYSQL_ROOT_PASSWORD: ${{ inputs.mysql-root-password }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         echo "🔍 Validating deployment..."
         
-        # Get outputs from deploy step
-        VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
-        MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
-        
-        echo "VPS IP: ${VPS_IP}"
-        echo "Mautic URL: ${MAUTIC_URL}"
+        # Read deployment info from file created by deploy script
+        if [ -f "./deployment-info.txt" ]; then
+          echo "📋 Reading deployment information..."
+          source ./deployment-info.txt
+          echo "VPS IP: ${VPS_IP}"
+          echo "Mautic URL: ${MAUTIC_URL}"
+        else
+          echo "❌ Error: deployment-info.txt not found"
+          echo "🔍 Files in current directory:"
+          ls -la
+          exit 1
+        fi
         
         if [ -z "$VPS_IP" ]; then
-          echo "❌ Error: VPS IP not found in deployment outputs"
+          echo "❌ Error: VPS IP not found in deployment info"
           exit 1
         fi
         
         if [ -z "$MAUTIC_URL" ]; then
-          echo "❌ Error: Mautic URL not found in deployment outputs"
+          echo "❌ Error: Mautic URL not found in deployment info"
           exit 1
         fi
         
