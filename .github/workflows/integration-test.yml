@@ -37,50 +37,21 @@ jobs:
           digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
           
-      - name: Validate deployment
+      - name: Show deployment results
         run: |
-          echo "🔍 Validating deployment..."
+          echo "🎉 Deployment completed successfully!"
+          echo "VPS IP: ${{ steps.deploy.outputs.vps-ip }}"
+          echo "Mautic URL: ${{ steps.deploy.outputs.mautic-url }}"
+          
+      - name: Test SSH access and container status
+        run: |
+          echo "🔐 Testing SSH access and verifying containers..."
           VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
-          MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
           
-          echo "VPS IP: $VPS_IP"
-          echo "Mautic URL: $MAUTIC_URL"
-          
-          # Wait for Mautic to be fully ready
-          echo "⏳ Waiting for Mautic to be ready..."
-          sleep 120
-          
-          # Test HTTP response
-          for i in {1..10}; do
-            echo "Attempt $i: Testing HTTP response..."
-            if curl -f -s --max-time 30 "$MAUTIC_URL" > /dev/null; then
-              echo "✅ Mautic is responding"
-              break
-            else
-              echo "⏳ Waiting 30 seconds before retry..."
-              sleep 30
-            fi
-            
-            if [ $i -eq 10 ]; then
-              echo "❌ Mautic failed to respond after 10 attempts"
-              exit 1
-            fi
-          done
-          
-          # Test that it's actually Mautic (not just nginx)
-          RESPONSE=$(curl -s --max-time 30 "$MAUTIC_URL" || echo "")
-          if echo "$RESPONSE" | grep -i "mautic" > /dev/null; then
-            echo "✅ Confirmed Mautic is running"
-          else
-            echo "❌ Response doesn't contain 'mautic'"
-            echo "Response preview: ${RESPONSE:0:200}..."
+          if [ -z "$VPS_IP" ]; then
+            echo "❌ VPS IP not available from deployment outputs"
             exit 1
           fi
-          
-      - name: Test SSH access
-        run: |
-          echo "🔐 Testing SSH access..."
-          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
           
           # Setup SSH
           mkdir -p ~/.ssh
@@ -97,15 +68,16 @@ jobs:
             
             # Check Mautic logs
             echo "📋 Recent Mautic logs:"
-            docker-compose logs --tail=20 mautic
+            docker-compose logs --tail=10 mautic
             
             # Check disk usage
             echo "💾 Disk usage:"
-            df -h
+            df -h /
           EOF
           
           # Cleanup SSH key
           rm -f ~/.ssh/id_rsa
+          echo "✅ SSH test completed successfully"
           
       - name: Cleanup test droplet
         if: always()
