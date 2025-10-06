@@ -52,6 +52,16 @@ done
 
 echo "✅ Configuration validated"
 
+# Function to quickly clear Mautic cache
+clear_mautic_cache() {
+    echo "🧹 Clearing Mautic cache (fast method)..."
+    if docker exec mautic_app rm -rf /var/www/html/var/cache/* 2>/dev/null; then
+        echo "✅ Cache cleared successfully"
+    else
+        echo "⚠️ Cache clear failed (cache directory may not exist yet)"
+    fi
+}
+
 # Install system dependencies
 echo "📦 Installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
@@ -372,14 +382,8 @@ echo "🔍 Checking if Mautic is already installed..."
 if docker exec mautic_app test -f /var/www/html/config/local.php && docker exec mautic_app grep -q "site_url" /var/www/html/config/local.php 2>/dev/null; then
     echo "✅ Mautic is already installed (config contains site_url)"
     
-    # Try to clear cache, but don't fail deployment if it doesn't work
-    echo "🧹 Clearing Mautic cache..."
-    if docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction 2>/dev/null; then
-        echo "✅ Cache cleared successfully"
-    else
-        echo "⚠️ Cache clear failed, but Mautic appears to be installed"
-        echo "   This is usually not critical for a running Mautic instance"
-    fi
+    # Clear cache for already installed Mautic
+    clear_mautic_cache
 else
     # Install Mautic if not already installed
     echo "🔧 Installing Mautic..."
@@ -439,8 +443,7 @@ else
         $DOCKER_COMPOSE_CMD --profile worker up -d mautic_worker || echo "⚠️ Failed to start worker container"
         
         # Clear cache after installation
-        echo "🧹 Clearing Mautic cache..."
-        docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
+        clear_mautic_cache
     else
         echo "❌ Mautic installation failed"
         echo "🔍 Debug: Checking if local.php was created during failed installation..."
@@ -487,8 +490,7 @@ fi
 
 # Clear Mautic cache after installing packages
 if [ -n "$MAUTIC_THEMES" ] || [ -n "$MAUTIC_PLUGINS" ]; then
-    echo "🧹 Clearing Mautic cache..."
-    docker exec -u www-data mautic_app php /var/www/html/bin/console cache:clear --no-interaction || echo "⚠️ Cache clear failed"
+    clear_mautic_cache
 fi
 
 # Final HTTP verification
