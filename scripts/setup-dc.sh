@@ -431,6 +431,9 @@ else
         
         echo "✅ Mautic installation completed"
         
+        # Mark core installation as complete (early success marker)
+        echo "CORE_INSTALLATION_COMPLETED" >> /var/log/setup-dc.log
+        
         # Start worker container after successful installation
         echo "🔄 Starting worker container..."
         $DOCKER_COMPOSE_CMD --profile worker up -d mautic_worker || echo "⚠️ Failed to start worker container"
