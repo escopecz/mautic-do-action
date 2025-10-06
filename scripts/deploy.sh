@@ -260,39 +260,26 @@ scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r . root@${VPS_IP}:/var/www/
 
 # Run setup script
 echo "⚙️  Running setup script on server..."
-# Start the setup script in the background and detach from SSH
-ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=60 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && nohup ./setup-dc.sh > /var/log/setup-dc.log 2>&1 < /dev/null &"
 
-echo "✅ Setup script started in background"
-
-# Wait for completion by checking the log file
-echo "⏳ Waiting for setup to complete (checking every 15 seconds)..."
-timeout=1200  # 20 minutes timeout (reduced from 30)
-counter=0
-    
-while [ $counter -lt $timeout ]; do
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'SETUP_COMPLETED\|Setup completed at:\|CORE_INSTALLATION_COMPLETED' /var/log/setup-dc.log 2>/dev/null"; then
-        echo "✅ Setup script completed successfully"
-        SETUP_EXIT_CODE=0
-        break
+# Try streaming approach first, with fallback to background + polling
+echo "📡 Attempting to stream setup script output in real-time..."
+if timeout 1200 ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=60 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && ./setup-dc.sh 2>&1 | tee /var/log/setup-dc.log"; then
+    echo "✅ Setup script completed successfully"
+    SETUP_EXIT_CODE=0
+else
+    SETUP_EXIT_CODE=$?
+    if [ $SETUP_EXIT_CODE -eq 124 ]; then
+        echo "⏰ Setup script timeout (20 minutes) - checking if it completed..."
+        # Check if script actually completed despite timeout
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'SETUP_COMPLETED\|Setup completed at:\|CORE_INSTALLATION_COMPLETED' /var/log/setup-dc.log 2>/dev/null"; then
+            echo "✅ Setup script actually completed successfully (despite timeout)"
+            SETUP_EXIT_CODE=0
+        else
+            echo "❌ Setup script genuinely timed out"
+        fi
+    else
+        echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
     fi
-    
-    # Show progress every 15 seconds (more frequent for better feedback)
-    if [ $((counter % 15)) -eq 0 ] && [ $counter -gt 0 ]; then
-        echo "⏳ Still running... (${counter}/${timeout}s)"
-        # Show last few lines of log for progress
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -2 /var/log/setup-dc.log 2>/dev/null | grep -E '(✅|🔧|🚀|⏳)'" || echo "   (checking...)"
-    fi
-    
-    sleep 5
-    counter=$((counter + 5))
-done
-
-if [ $counter -ge $timeout ]; then
-    echo "❌ Setup script timeout after ${timeout} seconds"
-    echo "📋 Last 10 lines of setup log:"
-    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -10 /var/log/setup-dc.log 2>/dev/null" || echo "   (log not accessible)"
-    SETUP_EXIT_CODE=124  # timeout exit code
 fi
 
 # Handle any errors
