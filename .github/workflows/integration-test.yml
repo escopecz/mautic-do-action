@@ -49,7 +49,23 @@ jobs:
       - name: Verify initial deployment is ready
         run: |
           echo "🔍 Actively verifying Mautic 6.0.4 is fully ready..."
+          echo "🐛 Debug: Checking deployment outputs..."
+          echo "  VPS IP: '${{ steps.deploy.outputs.vps-ip }}'"
+          echo "  Mautic URL: '${{ steps.deploy.outputs.mautic-url }}'"
+          
           MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
+          
+          # Validate URL before proceeding
+          if [ -z "$MAUTIC_URL" ]; then
+            echo "❌ Error: MAUTIC_URL is empty!"
+            echo "🔍 Deploy step outputs:"
+            echo "  - vps-ip: '${{ steps.deploy.outputs.vps-ip }}'"
+            echo "  - mautic-url: '${{ steps.deploy.outputs.mautic-url }}'"
+            echo "  - deployment-log: '${{ steps.deploy.outputs.deployment-log }}'"
+            exit 1
+          fi
+          
+          echo "✅ MAUTIC_URL is set to: $MAUTIC_URL"
           
           # Wait up to 2 minutes for Mautic to be fully ready
           timeout=120
@@ -112,7 +128,22 @@ jobs:
       - name: Verify upgrade is working
         run: |
           echo "🔍 Verifying upgraded Mautic 6.0.5 is working correctly..."
+          echo "🐛 Debug: Checking upgrade outputs..."
+          echo "  VPS IP: '${{ steps.update.outputs.vps-ip }}'"
+          echo "  Mautic URL: '${{ steps.update.outputs.mautic-url }}'"
+          
           MAUTIC_URL="${{ steps.update.outputs.mautic-url }}"
+          
+          # Validate URL before proceeding
+          if [ -z "$MAUTIC_URL" ]; then
+            echo "❌ Error: MAUTIC_URL is empty after upgrade!"
+            echo "🔍 Update step outputs:"
+            echo "  - vps-ip: '${{ steps.update.outputs.vps-ip }}'"
+            echo "  - mautic-url: '${{ steps.update.outputs.mautic-url }}'"
+            exit 1
+          fi
+          
+          echo "✅ MAUTIC_URL is set to: $MAUTIC_URL"
           
           # Quick verification that the upgraded instance is responding
           if curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" | grep -q "200"; then
