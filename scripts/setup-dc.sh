@@ -382,14 +382,82 @@ echo "✅ Mautic is healthy"
 
 # Check if Mautic is already installed
 echo "🔍 Checking if Mautic is already installed..."
-if docker exec mautic_app test -f /var/www/html/config/local.php && docker exec mautic_app grep -q "site_url" /var/www/html/config/local.php 2>/dev/null; then
-    echo "✅ Mautic is already installed (config contains site_url)"
+
+# Enhanced installation detection with multiple checks
+mautic_installed=false
+
+# Check 1: local.php exists and has site_url
+if docker exec mautic_app test -f /var/www/html/config/local.php; then
+    echo "✅ Found config/local.php file"
+    if docker exec mautic_app grep -q "site_url" /var/www/html/config/local.php 2>/dev/null; then
+        echo "✅ Config contains site_url - installation detected"
+        mautic_installed=true
+    else
+        echo "⚠️ Config file exists but missing site_url"
+    fi
+else
+    echo "❌ No config/local.php found"
+fi
+
+# Check 2: Database has been populated (check for core tables)
+if [ "$mautic_installed" = false ]; then
+    echo "🔍 Checking database for existing installation..."
+    # First check if we can connect to database
+    if docker exec mautic_mysql mysql -u"${MAUTIC_DB_USER}" -p"${MAUTIC_DB_PASSWORD}" -D"${MAUTIC_DB_DATABASE}" -e "SELECT 1;" >/dev/null 2>&1; then
+        echo "✅ Database connection successful"
+        # Check for Mautic tables
+        table_count=$(docker exec mautic_mysql mysql -u"${MAUTIC_DB_USER}" -p"${MAUTIC_DB_PASSWORD}" -D"${MAUTIC_DB_DATABASE}" -e "SHOW TABLES;" 2>/dev/null | wc -l)
+        echo "📊 Found $table_count tables in database"
+        
+        if docker exec mautic_mysql mysql -u"${MAUTIC_DB_USER}" -p"${MAUTIC_DB_PASSWORD}" -D"${MAUTIC_DB_DATABASE}" -e "SHOW TABLES LIKE 'users';" 2>/dev/null | grep -q "users"; then
+            echo "✅ Database contains Mautic tables - installation detected"
+            mautic_installed=true
+        else
+            echo "❌ Database missing core Mautic tables"
+        fi
+    else
+        echo "❌ Cannot connect to database"
+    fi
+fi
+
+# Check 3: HTTP response indicates installed Mautic (fallback check)
+if [ "$mautic_installed" = false ]; then
+    echo "🔍 Testing HTTP response for installation status..."
+    response=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT}/s/login" 2>/dev/null || echo "000")
+    if [ "$response" = "200" ]; then
+        echo "✅ Login page accessible - installation likely complete"
+        mautic_installed=true
+    else
+        echo "❌ Login page not accessible (HTTP: $response)"
+    fi
+fi
+
+if [ "$mautic_installed" = true ]; then
+    echo "✅ Mautic installation detected - skipping reinstall"
+    echo "🔄 Performing maintenance tasks instead..."
+    
+    # Ensure worker container is running
+    echo "🔄 Starting worker container..."
+    $DOCKER_COMPOSE_CMD --profile worker up -d mautic_worker || echo "⚠️ Failed to start worker container"
+    
+    # Run database update in case of version changes
+    echo "🔄 Running database update (safe for existing installations)..."
+    docker exec -u www-data mautic_app php /var/www/html/bin/console doctrine:migration:migrate --no-interaction || echo "⚠️ Database migration failed (may be normal if no updates needed)"
+    
+    # Run schema update (safe for existing installations)
+    echo "🔄 Updating database schema..."
+    docker exec -u www-data mautic_app php /var/www/html/bin/console doctrine:schema:update --force --no-interaction || echo "⚠️ Schema update failed (may be normal if no updates needed)"
     
     # Clear cache for already installed Mautic
     clear_mautic_cache
+    
+    # Update permissions just in case
+    echo "🔐 Updating file permissions..."
+    docker exec mautic_app chown -R www-data:www-data /var/www/html/config /var/www/html/var || echo "⚠️ Permission update failed"
+    
 else
     # Install Mautic if not already installed
-    echo "🔧 Installing Mautic..."
+    echo "🔧 Installing Mautic (no existing installation detected)..."
     
     # Note: Worker container is not started during initial deployment due to profile configuration
     echo "ℹ️ Worker container will be started after successful installation..."
