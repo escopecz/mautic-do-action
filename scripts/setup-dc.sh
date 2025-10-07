@@ -434,10 +434,49 @@ fi
 
 if [ "$mautic_installed" = true ]; then
     echo "✅ Mautic installation detected - skipping reinstall"
-    echo "🔄 Performing maintenance tasks instead..."
+    echo "🔄 Performing maintenance and version update tasks..."
     
-    # Ensure worker container is running
-    echo "🔄 Starting worker container..."
+    # Check if we need to update the Docker image version
+    echo "🔍 Checking for version updates..."
+    CURRENT_IMAGE=$(docker inspect mautic_app --format='{{.Config.Image}}' 2>/dev/null || echo "unknown")
+    TARGET_IMAGE="mautic/mautic:${MAUTIC_VERSION}"
+    
+    if [ "$CURRENT_IMAGE" != "$TARGET_IMAGE" ]; then
+        echo "📦 Version update detected:"
+        echo "  Current: $CURRENT_IMAGE"
+        echo "  Target:  $TARGET_IMAGE"
+        
+        # Pull new image
+        echo "⬇️ Pulling new Mautic image..."
+        docker pull "$TARGET_IMAGE"
+        
+        # Update containers with new image
+        echo "🔄 Updating main Mautic container to new version..."
+        $DOCKER_COMPOSE_CMD up -d --force-recreate mautic
+        
+        echo "🔄 Updating worker container to new version..."
+        $DOCKER_COMPOSE_CMD --profile worker up -d --force-recreate mautic_worker
+        
+        # Wait for containers to be healthy after update
+        echo "⏳ Waiting for updated containers to be healthy..."
+        timeout=120
+        counter=0
+        while [ "$(docker inspect --format='{{.State.Health.Status}}' mautic_app 2>/dev/null)" != "healthy" ]; do
+            if [ $counter -ge $timeout ]; then
+                echo "❌ Container health check timeout after update"
+                exit 1
+            fi
+            echo "Waiting for Mautic health check... (${counter}/${timeout}s)"
+            sleep 5
+            counter=$((counter + 5))
+        done
+        echo "✅ Containers updated successfully to version ${MAUTIC_VERSION}"
+    else
+        echo "✅ Docker image version is up to date ($CURRENT_IMAGE)"
+    fi
+    
+    # Ensure worker container is running (with potentially new version)
+    echo "🔄 Ensuring worker container is running..."
     $DOCKER_COMPOSE_CMD --profile worker up -d mautic_worker || echo "⚠️ Failed to start worker container"
     
     # Run database update in case of version changes
