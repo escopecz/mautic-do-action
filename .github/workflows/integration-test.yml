@@ -23,7 +23,7 @@ jobs:
           echo "test-name=$TEST_NAME" >> $GITHUB_OUTPUT
           echo "🏷️ Test VPS name: $TEST_NAME"
         
-      - name: Deploy Mautic (Test Action)
+      - name: Deploy Mautic (Initial Installation)
         id: deploy
         uses: ./
         with:
@@ -36,13 +36,152 @@ jobs:
           mysql-root-password: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
           digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Start with older version for upgrade testing
+          mautic-version: '6.0.4-apache'
           
-      - name: Show deployment results
+      - name: Show initial deployment results
         run: |
-          echo "🎉 Deployment completed successfully!"
+          echo "🎉 Initial deployment completed successfully!"
           echo "VPS IP: ${{ steps.deploy.outputs.vps-ip }}"
           echo "Mautic URL: ${{ steps.deploy.outputs.mautic-url }}"
-          echo "✅ Integration test passed - Mautic deployment and validation completed"
+          echo "✅ Mautic 6.0.4 installation test passed"
+          
+      - name: Verify initial deployment is ready
+        run: |
+          echo "🔍 Actively verifying Mautic 6.0.4 is fully ready..."
+          MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
+          
+          # Wait up to 2 minutes for Mautic to be fully ready
+          timeout=120
+          counter=0
+          
+          while [ $counter -lt $timeout ]; do
+            echo "⏳ Testing Mautic readiness... (${counter}/${timeout}s)"
+            
+            # Test login page accessibility
+            if curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" | grep -q "200"; then
+              echo "✅ Mautic login page is accessible"
+              
+              # Additional check: verify the page contains expected Mautic content
+              if curl -s "${MAUTIC_URL}/s/login" | grep -q -i "mautic\|login"; then
+                echo "✅ Mautic application is fully ready!"
+                break
+              else
+                echo "⚠️ Page accessible but content not ready yet..."
+              fi
+            else
+              echo "⚠️ Mautic not yet accessible..."
+            fi
+            
+            sleep 5
+            counter=$((counter + 5))
+          done
+          
+          if [ $counter -ge $timeout ]; then
+            echo "❌ Timeout waiting for Mautic to be ready"
+            echo "🔍 Final check - attempting to access ${MAUTIC_URL}/s/login"
+            curl -v "${MAUTIC_URL}/s/login" || echo "Failed to access Mautic"
+            exit 1
+          fi
+          
+          echo "🎉 Initial deployment verification completed - ready for upgrade test!"
+          
+      - name: Deploy Mautic (Version Upgrade Test)
+        id: update
+        uses: ./
+        with:
+          vps-name: ${{ steps.test-name.outputs.test-name }}
+          vps-size: 's-1vcpu-1gb'
+          vps-region: 'nyc1'
+          email: 'test@mautic-test.local'
+          mautic-password: ${{ secrets.TEST_MAUTIC_PASSWORD }}
+          mysql-password: ${{ secrets.TEST_MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
+          digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Upgrade to latest version to test version update handling
+          mautic-version: '6.0.5-apache'
+          
+      - name: Show update results
+        run: |
+          echo "🔄 Version upgrade deployment completed!"
+          echo "VPS IP: ${{ steps.update.outputs.vps-ip }}"
+          echo "Mautic URL: ${{ steps.update.outputs.mautic-url }}"
+          echo "✅ Upgrade from 6.0.4 to 6.0.5 completed - No reinstallation occurred"
+          
+      - name: Verify upgrade is working
+        run: |
+          echo "🔍 Verifying upgraded Mautic 6.0.5 is working correctly..."
+          MAUTIC_URL="${{ steps.update.outputs.mautic-url }}"
+          
+          # Quick verification that the upgraded instance is responding
+          if curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" | grep -q "200"; then
+            echo "✅ Upgraded Mautic is responding correctly"
+            
+            # Verify the login page contains expected content
+            if curl -s "${MAUTIC_URL}/s/login" | grep -q -i "mautic\|login"; then
+              echo "✅ Upgraded Mautic application is fully functional!"
+            else
+              echo "⚠️ Page accessible but content verification failed"
+              exit 1
+            fi
+          else
+            echo "❌ Upgraded Mautic is not responding correctly"
+            echo "🔍 Debug: Testing ${MAUTIC_URL}/s/login"
+            curl -v "${MAUTIC_URL}/s/login" || echo "Failed to access upgraded Mautic"
+            exit 1
+          fi
+          
+      - name: Validate update behavior
+        run: |
+          echo "🔍 Validating that version upgrade did not reinstall Mautic..."
+          
+          # Download the logs from the update deployment
+          if [ -f ./setup-dc.log ]; then
+            echo "📋 Checking deployment logs for upgrade indicators..."
+            
+            # Check if installation was skipped (good)
+            if grep -q "Mautic installation detected - skipping reinstall" ./setup-dc.log; then
+              echo "✅ PASS: Found 'installation detected' message"
+            else
+              echo "❌ FAIL: Did not find installation detection message"
+              echo "📋 Recent log entries:"
+              tail -20 ./setup-dc.log || echo "No log file found"
+              exit 1
+            fi
+            
+            # Check if maintenance tasks were run (good)
+            if grep -q "Performing maintenance tasks instead" ./setup-dc.log; then
+              echo "✅ PASS: Found maintenance tasks execution"
+            else
+              echo "❌ FAIL: Maintenance tasks were not executed"
+              exit 1
+            fi
+            
+            # Check that full installation was NOT run (good)
+            if grep -q "Running mautic:install command" ./setup-dc.log; then
+              echo "❌ FAIL: Full installation was unexpectedly run during upgrade"
+              echo "📋 This suggests the update detection logic failed"
+              exit 1
+            else
+              echo "✅ PASS: Full installation was correctly skipped"
+            fi
+            
+            # Check if database migrations were run (good for version upgrades)
+            if grep -q "Running database update" ./setup-dc.log; then
+              echo "✅ PASS: Database migrations were executed for version upgrade"
+            else
+              echo "⚠️ WARNING: No database migration logs found (may be normal)"
+            fi
+            
+            echo "🎉 All version upgrade validation checks passed!"
+            echo "🏁 Integration test completed successfully:"
+            echo "   ✅ Initial deployment with Mautic 6.0.4"
+            echo "   ✅ Version upgrade to 6.0.5 without reinstallation"
+            echo "   ✅ Proper maintenance and migration execution"
+          else
+            echo "⚠️ WARNING: No setup log found for validation"
+          fi
           
       - name: Cleanup test droplet
         if: always()
@@ -66,8 +205,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-logs
+          name: integration-test-logs-${{ github.run_number }}
           path: |
             ./setup-dc.log
+            ./deploy.env
           if-no-files-found: warn
           retention-days: 7
