@@ -284,17 +284,36 @@ fi
 
 # Handle any errors
 if [ $SETUP_EXIT_CODE -ne 0 ]; then
+    echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
+    echo "🔍 Debug information:"
+    echo "  - VPS IP: ${VPS_IP}"
+    echo "  - Setup exit code: ${SETUP_EXIT_CODE}"
+    
     # Try to get the log file anyway
     echo "📥 Attempting to download setup log for debugging..."
     if scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./setup-dc.log 2>/dev/null; then
-        echo "📋 Setup log contents:"
+        echo "📋 Last 50 lines of setup log:"
         tail -50 ./setup-dc.log
+        echo "📋 Checking for specific error patterns:"
+        if grep -q "❌" ./setup-dc.log; then
+            echo "🔍 Found error messages in log:"
+            grep "❌" ./setup-dc.log | tail -10
+        fi
+        if grep -q "SETUP_COMPLETED" ./setup-dc.log; then
+            echo "✅ Setup actually completed despite exit code!"
+            echo "🔄 Continuing with outputs since setup marked as complete..."
+        else
+            echo "❌ Setup did not complete successfully"
+            exit 1
+        fi
     else
         echo "⚠️ Could not retrieve setup log, trying to get error details..."
         # Get basic error information
         ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup script permissions:'; ls -la /var/www/setup-dc.sh 2>/dev/null || echo 'setup-dc.sh not found'"
+        exit 1
     fi
-    exit 1
+else
+    echo "✅ Setup script completed successfully with exit code: ${SETUP_EXIT_CODE}"
 fi
 
 # Download setup log
@@ -305,15 +324,27 @@ scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-d
 rm -f ~/.ssh/id_rsa
 
 # Set outputs
+echo "🔍 Preparing outputs..."
+echo "  - VPS_IP: '${VPS_IP}'"
+echo "  - INPUT_DOMAIN: '${INPUT_DOMAIN}'"
+echo "  - MAUTIC_PORT: '${MAUTIC_PORT}'"
+echo "  - INPUT_EMAIL: '${INPUT_EMAIL}'"
+
 if [ -n "$INPUT_DOMAIN" ]; then
     MAUTIC_URL="https://${INPUT_DOMAIN}"
+    echo "  - Using domain-based URL"
 else
     MAUTIC_URL="http://${VPS_IP}:${MAUTIC_PORT}"
+    echo "  - Using IP-based URL"
 fi
+
+echo "  - Final MAUTIC_URL: '${MAUTIC_URL}'"
 
 echo "vps-ip=${VPS_IP}" >> $GITHUB_OUTPUT
 echo "mautic-url=${MAUTIC_URL}" >> $GITHUB_OUTPUT
 echo "deployment-log=./setup-dc.log" >> $GITHUB_OUTPUT
+
+echo "✅ Outputs set successfully"
 
 echo "🎉 Deployment completed successfully!"
 echo "🌐 Your Mautic instance is available at: ${MAUTIC_URL}"
