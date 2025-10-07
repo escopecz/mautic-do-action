@@ -10,6 +10,11 @@ exec 2>&1
 
 echo "🚀 Starting Mautic Docker Compose setup..."
 echo "Timestamp: $(date)"
+
+# Wait for VPS initialization to complete
+echo "⏳ Waiting for VPS initialization to complete..."
+sleep 30
+
 echo "🔍 Environment check:"
 echo "  - Current user: $(whoami)"
 echo "  - Current directory: $(pwd)"
@@ -74,36 +79,116 @@ pkill -f unattended-upgrade || true
 
 # Wait for apt locks to be released
 echo "🔒 Checking for apt locks..."
-timeout=300
+
+# Function to check if any apt locks are held
+check_apt_locks() {
+    # Check all possible apt lock files
+    local locks_held=false
+    
+    if fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+        echo "⚠️ dpkg frontend lock is held"
+        locks_held=true
+    fi
+    
+    if fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+        echo "⚠️ apt lists lock is held"
+        locks_held=true
+    fi
+    
+    if fuser /var/cache/apt/archives/lock >/dev/null 2>&1; then
+        echo "⚠️ apt archives lock is held"
+        locks_held=true
+    fi
+    
+    if fuser /var/lib/dpkg/lock >/dev/null 2>&1; then
+        echo "⚠️ dpkg lock is held"
+        locks_held=true
+    fi
+    
+    # Also check for running apt processes
+    if pgrep -f "apt-get|apt|dpkg|unattended-upgrade" >/dev/null 2>&1; then
+        echo "⚠️ apt/dpkg processes are running"
+        locks_held=true
+    fi
+    
+    $locks_held
+}
+
+# Wait for all locks to be released
+timeout=600  # Increased timeout to 10 minutes
 counter=0
-while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+
+while check_apt_locks; do
     if [ $counter -ge $timeout ]; then
-        echo "❌ Timeout waiting for apt locks to be released"
-        echo "🔍 Current apt processes:"
-        ps aux | grep -E "(apt|dpkg|unattended)" | grep -v grep || true
-        echo "⚠️ Attempting to stop unattended-upgrades and remove locks..."
-        pkill -f unattended-upgrade || true
-        systemctl stop unattended-upgrades || true
-        sleep 5
-        rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock || true
+        echo "❌ Timeout waiting for apt locks to be released after ${timeout} seconds"
+        echo "🔍 Final attempt to force release locks..."
+        
+        # Kill all apt-related processes
+        pkill -9 -f "apt-get|apt|dpkg|unattended-upgrade" || true
+        
+        # Remove all lock files
+        rm -f /var/lib/dpkg/lock-frontend \
+              /var/lib/dpkg/lock \
+              /var/cache/apt/archives/lock \
+              /var/lib/apt/lists/lock || true
+        
+        # Fix any broken packages
         dpkg --configure -a || true
+        
+        # Wait a bit and break
+        sleep 5
         break
     fi
     
-    # Show more detailed info every 60 seconds
+    # Show detailed info every 60 seconds
     if [ $((counter % 60)) -eq 0 ] && [ $counter -gt 0 ]; then
-        echo "🔍 Checking what's holding the lock:"
-        ps aux | grep -E "(apt|dpkg|unattended)" | grep -v grep || echo "No apt/dpkg processes found"
-        lsof /var/lib/dpkg/lock-frontend 2>/dev/null || echo "No processes using lock file"
+        echo "🔍 Detailed lock analysis:"
+        echo "  Running apt processes:"
+        ps aux | grep -E "(apt|dpkg|unattended)" | grep -v grep || echo "    None found"
+        echo "  Lock file status:"
+        for lock_file in /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock; do
+            if [ -f "$lock_file" ]; then
+                echo "    $lock_file: $(lsof "$lock_file" 2>/dev/null | tail -n +2 || echo 'exists but no process found')"
+            else
+                echo "    $lock_file: not found"
+            fi
+        done
+        
+        # Try to stop unattended upgrades again
+        echo "  Attempting to stop unattended-upgrades..."
+        systemctl stop unattended-upgrades || true
+        pkill -f unattended-upgrade || true
     fi
     
-    echo "⏳ Waiting for apt locks to be released... ($counter/${timeout}s)"
-    sleep 10
-    counter=$((counter + 10))
+    echo "⏳ Waiting for apt locks to be released... (${counter}/${timeout}s)"
+    sleep 15  # Check every 15 seconds
+    counter=$((counter + 15))
 done
 
 echo "✅ Apt locks released, proceeding with package installation"
-apt-get update
+
+# Wait a bit more to ensure processes have fully released
+sleep 5
+
+# Update package lists with retry
+echo "📦 Updating package lists..."
+retry_count=0
+max_retries=3
+while [ $retry_count -lt $max_retries ]; do
+    if apt-get update; then
+        echo "✅ Package lists updated successfully"
+        break
+    else
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⚠️ apt-get update failed (attempt $retry_count/$max_retries), retrying in 30 seconds..."
+            sleep 30
+        else
+            echo "❌ Failed to update package lists after $max_retries attempts"
+            exit 1
+        fi
+    fi
+done
 
 # Install required packages
 packages=("curl" "wget" "unzip" "git" "nano" "htop" "cron" "netcat")
@@ -113,43 +198,51 @@ fi
 
 for package in "${packages[@]}"; do
     if ! dpkg -l | grep -q "^ii  $package "; then
-        echo "Installing $package..."
+        echo "📦 Installing $package..."
         retry_count=0
         max_retries=3
         while [ $retry_count -lt $max_retries ]; do
-            if apt-get install -y "$package"; then
+            # Wait for locks before attempting installation
+            echo "🔒 Ensuring no locks before installing $package..."
+            wait_counter=0
+            max_wait=120  # 2 minutes
+            while check_apt_locks && [ $wait_counter -lt $max_wait ]; do
+                echo "⏳ Waiting for locks to clear before installing $package... (${wait_counter}/${max_wait}s)"
+                sleep 10
+                wait_counter=$((wait_counter + 10))
+                
+                # Try to clear locks if they persist
+                if [ $wait_counter -ge 60 ]; then
+                    echo "⚠️ Locks persisting, attempting to clear..."
+                    pkill -f unattended-upgrade || true
+                    systemctl stop unattended-upgrades || true
+                fi
+            done
+            
+            # Attempt installation
+            if DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Lock::Timeout=60 "$package"; then
                 echo "✅ $package installed successfully"
                 break
             else
                 retry_count=$((retry_count + 1))
                 if [ $retry_count -lt $max_retries ]; then
-                    echo "⚠️ Failed to install $package (attempt $retry_count/$max_retries), retrying in 10 seconds..."
-                    sleep 10
-                    # Check for locks again with timeout and aggressive handling
-                    lock_wait_counter=0
-                    max_lock_wait=120  # 2 minutes
-                    while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-                        if [ $lock_wait_counter -ge $max_lock_wait ]; then
-                            echo "⚠️ dpkg lock held too long, attempting to stop unattended-upgrades..."
-                            # Kill unattended-upgrades if it's running
-                            pkill -f unattended-upgrade || true
-                            systemctl stop unattended-upgrades || true
-                            sleep 10
-                            # Force remove lock if still present
-                            if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
-                                echo "⚠️ Forcefully removing dpkg locks..."
-                                rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock || true
-                                dpkg --configure -a || true
-                            fi
-                            break
-                        fi
-                        echo "⏳ Waiting for dpkg lock... (${lock_wait_counter}/${max_lock_wait}s)"
-                        sleep 5
-                        lock_wait_counter=$((lock_wait_counter + 5))
-                    done
+                    echo "⚠️ Failed to install $package (attempt $retry_count/$max_retries)"
+                    echo "🔄 Waiting 30 seconds before retry..."
+                    sleep 30
                 else
                     echo "❌ Failed to install $package after $max_retries attempts"
-                    exit 1
+                    echo "🔍 Checking system state:"
+                    ps aux | grep -E "(apt|dpkg)" | grep -v grep || echo "No apt/dpkg processes found"
+                    
+                    # Try one more time with force
+                    echo "🚨 Final attempt with force options..."
+                    if DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-broken "$package"; then
+                        echo "✅ $package installed with force"
+                        break
+                    else
+                        echo "❌ Complete failure installing $package"
+                        exit 1
+                    fi
                 fi
             fi
         done
