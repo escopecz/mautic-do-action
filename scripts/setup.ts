@@ -17,6 +17,12 @@ import { loadDeploymentConfig } from './config.ts';
 
 async function main() {
   try {
+    // Start with immediate console output before logger init
+    console.log('🚀 Mautic setup binary starting...');
+    console.log(`Timestamp: ${new Date().toISOString()}`);
+    console.log(`Deno version: ${Deno.version.deno}`);
+    console.log(`Platform: ${Deno.build.os}-${Deno.build.arch}`);
+    
     Logger.log('Starting Mautic Docker Compose setup...', '🚀');
     Logger.log(`Timestamp: ${new Date().toISOString()}`);
     

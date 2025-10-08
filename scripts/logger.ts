@@ -7,10 +7,18 @@ export class Logger {
   
   static async init() {
     try {
+      // Ensure log directory exists
+      await Deno.mkdir('/var/log', { recursive: true }).catch(() => {
+        // If we can't create /var/log, try current directory
+        this.logFile = './setup-dc.log';
+      });
+      
       await Deno.writeTextFile(this.logFile, '');
       await Deno.chmod(this.logFile, 0o600);
     } catch (error: unknown) {
-      console.error('Failed to initialize log file:', error);
+      // Fallback to console-only logging if file operations fail
+      console.error('Log file initialization failed, using console-only logging:', error);
+      this.logFile = ''; // Disable file logging
     }
   }
   
@@ -19,11 +27,13 @@ export class Logger {
     const logMessage = `${emoji} ${message}`;
     console.log(logMessage);
     
-    // Also write to log file
-    try {
-      Deno.writeTextFileSync(this.logFile, `[${timestamp}] ${logMessage}\n`, { append: true });
-    } catch {
-      // Ignore log file errors
+    // Also write to log file if available
+    if (this.logFile) {
+      try {
+        Deno.writeTextFileSync(this.logFile, `[${timestamp}] ${logMessage}\n`, { append: true });
+      } catch {
+        // Ignore log file errors
+      }
     }
   }
   

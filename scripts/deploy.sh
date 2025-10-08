@@ -219,9 +219,10 @@ if ! command -v deno &> /dev/null; then
 fi
 
 echo "✅ Deno version: $(deno --version | head -n 1)"
+echo "🔍 Target platform: $(uname -m)-$(uname -s)"
 
 mkdir -p build
-deno compile --allow-all --output ./build/setup "${ACTION_PATH}/scripts/setup.ts"
+deno compile --allow-all --target x86_64-unknown-linux-gnu --output ./build/setup "${ACTION_PATH}/scripts/setup.ts"
 
 if [ ! -f "./build/setup" ]; then
     echo "❌ Error: Failed to compile Deno setup script"
@@ -280,14 +281,98 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "mkdir -p /var/w
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy.env docker-compose.yml .mautic_env.template root@${VPS_IP}:/var/www/
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa build/setup root@${VPS_IP}:/var/www/setup
 
+# Verify binary can execute
+echo "🔍 Verifying setup binary on server..."
+ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup && file setup"
+
+# Test if binary can start
+echo "🧪 Testing binary execution..."
+if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && timeout 10 ./setup --help 2>/dev/null || echo 'Binary test completed'"; then
+    echo "✅ Binary appears to be working"
+else
+    echo "⚠️ Binary test had issues, but continuing..."
+fi
+
 # Run setup script
 echo "⚙️  Running compiled setup binary on server..."
 
-# Try streaming approach first, with fallback to background + polling
-echo "📡 Attempting to stream setup script output in real-time..."
-if timeout 1200 ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=60 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup && ./setup 2>&1 | tee /var/log/setup-dc.log"; then
-    echo "✅ Setup script completed successfully"
-    SETUP_EXIT_CODE=0
+# Try background execution with polling instead of streaming
+echo "🔄 Starting setup script in background and monitoring progress..."
+
+# Start setup script in background and get PID
+ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && nohup ./setup > /var/log/setup-dc.log 2>&1 & echo \$!" > setup_pid.txt
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to start setup script"
+    exit 1
+fi
+
+SETUP_PID=$(cat setup_pid.txt)
+echo "✅ Setup script started with PID: ${SETUP_PID}"
+
+# Monitor progress by checking log file
+echo "📊 Monitoring setup progress..."
+TIMEOUT=1200  # 20 minutes
+COUNTER=0
+LAST_LOG_SIZE=0
+
+while [ $COUNTER -lt $TIMEOUT ]; do
+    # Check if process is still running
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "kill -0 ${SETUP_PID} 2>/dev/null"; then
+        # Process is running, show log progress
+        LOG_SIZE=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "wc -c < /var/log/setup-dc.log 2>/dev/null || echo 0")
+        
+        if [ "$LOG_SIZE" -gt "$LAST_LOG_SIZE" ]; then
+            # Show new log content
+            echo "📄 Setup progress (${COUNTER}s):"
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -n 5 /var/log/setup-dc.log 2>/dev/null || echo 'Log not yet available'"
+            LAST_LOG_SIZE=$LOG_SIZE
+        else
+            echo "⏳ Setup running... (${COUNTER}s)"
+        fi
+    else
+        # Process finished, get exit code
+        SETUP_EXIT_CODE=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "wait ${SETUP_PID}; echo \$?" 2>/dev/null || echo "255")
+        echo "✅ Setup script completed with exit code: ${SETUP_EXIT_CODE}"
+        break
+    fi
+    
+    sleep 30
+    COUNTER=$((COUNTER + 30))
+done
+
+# Handle timeout
+if [ $COUNTER -ge $TIMEOUT ]; then
+    echo "⏰ Setup script timeout after ${TIMEOUT} seconds"
+    echo "🔍 Checking if setup actually completed..."
+    
+    # Check for completion markers in log
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'deployment_status::success' /var/log/setup-dc.log 2>/dev/null"; then
+        echo "✅ Setup completed successfully (found success marker)"
+        SETUP_EXIT_CODE=0
+    else
+        echo "❌ Setup did not complete within timeout"
+        SETUP_EXIT_CODE=124
+    fi
+fi
+
+# Check final status
+if [ "$SETUP_EXIT_CODE" -ne 0 ]; then
+    echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
+    echo "🔍 Debug information:"
+    echo "  - VPS IP: ${VPS_IP}"
+    echo "  - Setup exit code: ${SETUP_EXIT_CODE}"
+    
+    # Try to get log content for debugging
+    echo "📄 Last 20 lines of setup log:"
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -n 20 /var/log/setup-dc.log" 2>/dev/null; then
+        echo "📊 Setup log retrieved successfully"
+    else
+        echo "⚠️ Could not retrieve setup log, trying to get error details..."
+        # Get basic error information
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup binary permissions:'; ls -la /var/www/setup 2>/dev/null || echo 'setup binary not found'"
+        exit 1
+    fi
 else
     SETUP_EXIT_CODE=$?
     if [ $SETUP_EXIT_CODE -eq 124 ]; then
@@ -328,12 +413,6 @@ if [ $SETUP_EXIT_CODE -ne 0 ]; then
             echo "❌ Setup did not complete successfully"
             exit 1
         fi
-    else
-        echo "⚠️ Could not retrieve setup log, trying to get error details..."
-        # Get basic error information
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup binary permissions:'; ls -la /var/www/setup 2>/dev/null || echo 'setup binary not found'"
-        exit 1
-    fi
 else
     echo "✅ Setup script completed successfully with exit code: ${SETUP_EXIT_CODE}"
 fi
@@ -341,6 +420,9 @@ fi
 # Download setup log
 echo "📥 Downloading setup log..."
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./setup-dc.log
+
+# Clean up temporary files
+rm -f setup_pid.txt
 
 # Clean up SSH key
 rm -f ~/.ssh/id_rsa
