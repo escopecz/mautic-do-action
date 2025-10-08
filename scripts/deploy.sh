@@ -413,6 +413,10 @@ if [ $SETUP_EXIT_CODE -ne 0 ]; then
             echo "❌ Setup did not complete successfully"
             exit 1
         fi
+    else
+        echo "❌ Could not retrieve setup log for debugging"
+        exit 1
+    fi
 else
     echo "✅ Setup script completed successfully with exit code: ${SETUP_EXIT_CODE}"
 fi

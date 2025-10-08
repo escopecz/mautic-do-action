@@ -74,13 +74,13 @@ export class DockerManager {
     
     try {
       // Stop containers gracefully
-      await ProcessManager.runShell('docker-compose down', { ignoreError: true });
+      await ProcessManager.runShell('docker compose down', { ignoreError: true });
       
       // Remove any stopped containers
-      await ProcessManager.runShell('docker-compose rm -f', { ignoreError: true });
+      await ProcessManager.runShell('docker compose rm -f', { ignoreError: true });
       
       // Start containers
-      const result = await ProcessManager.runShell('docker-compose up -d', { ignoreError: true });
+      const result = await ProcessManager.runShell('docker compose up -d', { ignoreError: true });
       
       if (result.success) {
         Logger.success('Containers recreated successfully');
