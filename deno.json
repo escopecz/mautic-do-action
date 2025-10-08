@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.ns"],
+    "strict": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "tasks": {
+    "compile": "deno compile --allow-all --output build/setup scripts/setup.ts",
+    "run": "deno run --allow-all scripts/setup.ts",
+    "check": "deno check scripts/setup.ts",
+    "test": "deno test --allow-all scripts/",
+    "lint": "deno lint scripts/",
+    "fmt": "deno fmt scripts/"
+  },
+  "imports": {
+    "@/": "./scripts/"
+  }
+}

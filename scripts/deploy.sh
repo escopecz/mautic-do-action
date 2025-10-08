@@ -206,11 +206,32 @@ echo "🔒 Environment file secured with restricted permissions"
 
 # Copy templates to current directory for deployment
 cp "${ACTION_PATH}/templates/docker-compose.yml" .
-cp "${ACTION_PATH}/scripts/setup-dc.sh" .
 cp "${ACTION_PATH}/templates/.mautic_env.template" .
 
+# Compile Deno setup script to binary
+echo "🔨 Compiling Deno TypeScript setup script to binary..."
+
+# Check if Deno is available
+if ! command -v deno &> /dev/null; then
+    echo "📦 Installing Deno..."
+    curl -fsSL https://deno.land/install.sh | sh
+    export PATH="$HOME/.deno/bin:$PATH"
+fi
+
+echo "✅ Deno version: $(deno --version | head -n 1)"
+
+mkdir -p build
+deno compile --allow-all --output ./build/setup "${ACTION_PATH}/scripts/setup.ts"
+
+if [ ! -f "./build/setup" ]; then
+    echo "❌ Error: Failed to compile Deno setup script"
+    exit 1
+fi
+
+echo "✅ Successfully compiled setup binary"
+
 echo "📁 Files prepared for deployment:"
-ls -la deploy.env docker-compose.yml setup-dc.sh .mautic_env.template
+ls -la deploy.env docker-compose.yml .mautic_env.template build/setup
 
 # Deploy to server
 echo "🚀 Deploying to server..."
@@ -256,14 +277,15 @@ echo "📤 Copying files to server..."
 # Ensure /var/www directory exists
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "mkdir -p /var/www"
 # Copy files
-scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r . root@${VPS_IP}:/var/www/
+scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy.env docker-compose.yml .mautic_env.template root@${VPS_IP}:/var/www/
+scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa build/setup root@${VPS_IP}:/var/www/setup
 
 # Run setup script
-echo "⚙️  Running setup script on server..."
+echo "⚙️  Running compiled setup binary on server..."
 
 # Try streaming approach first, with fallback to background + polling
 echo "📡 Attempting to stream setup script output in real-time..."
-if timeout 1200 ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=60 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup-dc.sh && ./setup-dc.sh 2>&1 | tee /var/log/setup-dc.log"; then
+if timeout 1200 ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=60 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && chmod +x setup && ./setup 2>&1 | tee /var/log/setup-dc.log"; then
     echo "✅ Setup script completed successfully"
     SETUP_EXIT_CODE=0
 else
@@ -309,7 +331,7 @@ if [ $SETUP_EXIT_CODE -ne 0 ]; then
     else
         echo "⚠️ Could not retrieve setup log, trying to get error details..."
         # Get basic error information
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup script permissions:'; ls -la /var/www/setup-dc.sh 2>/dev/null || echo 'setup-dc.sh not found'"
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Current directory:'; pwd; echo 'Files in /var/www:'; ls -la /var/www/; echo 'Setup binary permissions:'; ls -la /var/www/setup 2>/dev/null || echo 'setup binary not found'"
         exit 1
     fi
 else
