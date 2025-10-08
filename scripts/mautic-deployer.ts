@@ -100,8 +100,11 @@ export class MauticDeployer {
     Logger.log('Performing Mautic update...', '🔄');
     
     try {
-      // Pull new image
-      const imageName = `mautic/mautic:${this.config.mauticVersion}-apache`;
+      // Pull new image - handle version that may already include -apache suffix
+      const baseVersion = this.config.mauticVersion.endsWith('-apache') 
+        ? this.config.mauticVersion 
+        : `${this.config.mauticVersion}-apache`;
+      const imageName = `mautic/mautic:${baseVersion}`;
       const pullSuccess = await DockerManager.pullImage(imageName);
       
       if (!pullSuccess) {
@@ -141,9 +144,12 @@ export class MauticDeployer {
     
     try {
       const composeContent = await Deno.readTextFile('docker-compose.yml');
+      const baseVersion = this.config.mauticVersion.endsWith('-apache') 
+        ? this.config.mauticVersion 
+        : `${this.config.mauticVersion}-apache`;
       const updatedContent = composeContent.replace(
         /mautic\/mautic:[^-]+-apache/g,
-        `mautic/mautic:${this.config.mauticVersion}-apache`
+        `mautic/mautic:${baseVersion}`
       );
       
       await Deno.writeTextFile('docker-compose.yml', updatedContent);
@@ -234,12 +240,17 @@ MAUTIC_PLUGINS=${this.config.mauticPlugins || ''}
   private async createDockerCompose(): Promise<void> {
     Logger.log('Creating docker-compose.yml...', '🐳');
     
+    // Handle version that may already include -apache suffix
+    const baseVersion = this.config.mauticVersion.endsWith('-apache') 
+      ? this.config.mauticVersion 
+      : `${this.config.mauticVersion}-apache`;
+    
     const composeContent = `
 version: '3.8'
 
 services:
   mautic_web:
-    image: mautic/mautic:${this.config.mauticVersion}-apache
+    image: mautic/mautic:${baseVersion}
     container_name: mautic_web
     restart: unless-stopped
     ports:
@@ -266,7 +277,7 @@ services:
       start_period: 60s
 
   mautic_cron:
-    image: mautic/mautic:${this.config.mauticVersion}-apache
+    image: mautic/mautic:${baseVersion}
     container_name: mautic_cron
     restart: unless-stopped
     volumes:
