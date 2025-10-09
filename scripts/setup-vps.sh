@@ -7,7 +7,7 @@ echo "🔄 Updating system packages..."
 apt-get update
 
 echo "🐳 Installing Docker..."
-apt-get install -y docker.io docker-compose
+apt-get install -y docker.io docker-compose-plugin
 
 echo "🔐 Starting Docker service..."
 systemctl start docker
