@@ -134,13 +134,13 @@ jobs:
           # SSH into VPS and modify the version, then trigger upgrade
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} << 'EOF'
             cd /var/www
-            echo "🔍 Current .env contents:"
-            cat .env
+            echo "🔍 Current deploy.env contents:"
+            cat deploy.env
             echo ""
             echo "🔄 Updating MAUTIC_VERSION to 6.0.5-apache..."
-            sed -i 's/MAUTIC_VERSION=.*/MAUTIC_VERSION=6.0.5-apache/' .env
-            echo "✅ Updated .env contents:"
-            cat .env
+            sed -i 's/MAUTIC_VERSION=.*/MAUTIC_VERSION=6.0.5-apache/' deploy.env
+            echo "✅ Updated deploy.env contents:"
+            cat deploy.env
             echo ""
             echo "🚀 Re-running setup script to trigger upgrade detection..."
             ./setup 2>&1 | tee /var/log/upgrade-test.log
