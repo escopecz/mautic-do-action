@@ -320,10 +320,21 @@ while [ $COUNTER -lt $TIMEOUT ]; do
     SSH_CHECK_RESULT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'SETUP_COMPLETED_' /var/log/setup-dc.log 2>/dev/null && echo 'COMPLETED' || echo 'RUNNING'" 2>/dev/null || echo "SSH_FAILED")
     
     if [ "$SSH_CHECK_RESULT" = "COMPLETED" ]; then
-        # Setup completed, extract exit code
-        SETUP_EXIT_CODE=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "grep 'SETUP_COMPLETED_' /var/log/setup-dc.log | tail -1 | cut -d'_' -f2" 2>/dev/null || echo "255")
-        # Ensure SETUP_EXIT_CODE is not empty
-        SETUP_EXIT_CODE=${SETUP_EXIT_CODE:-255}
+        # Setup completed, extract exit code with better parsing
+        SETUP_EXIT_CODE=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "grep 'SETUP_COMPLETED_' /var/log/setup-dc.log | tail -1" 2>/dev/null)
+        
+        # Extract the number after SETUP_COMPLETED_
+        if [[ "$SETUP_EXIT_CODE" =~ SETUP_COMPLETED_([0-9]+) ]]; then
+            SETUP_EXIT_CODE="${BASH_REMATCH[1]}"
+        else
+            SETUP_EXIT_CODE=255
+        fi
+        
+        # Ensure SETUP_EXIT_CODE is not empty and is numeric
+        if ! [[ "$SETUP_EXIT_CODE" =~ ^[0-9]+$ ]]; then
+            SETUP_EXIT_CODE=255
+        fi
+        
         echo "✅ Setup script completed with exit code: ${SETUP_EXIT_CODE}"
         break
     elif [ "$SSH_CHECK_RESULT" = "SSH_FAILED" ]; then
@@ -357,7 +368,8 @@ if [ $COUNTER -ge $TIMEOUT ]; then
     fi
 fi
 
-# Check final status  
+# Check final status
+echo "🔍 Final status check: SETUP_EXIT_CODE='${SETUP_EXIT_CODE}'"
 if [ -n "$SETUP_EXIT_CODE" ] && [ "$SETUP_EXIT_CODE" -ne 0 ]; then
     echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
     echo "🔍 Debug information:"
@@ -375,7 +387,10 @@ if [ -n "$SETUP_EXIT_CODE" ] && [ "$SETUP_EXIT_CODE" -ne 0 ]; then
         exit 1
     fi
 else
-    SETUP_EXIT_CODE=$?
+    # Don't overwrite SETUP_EXIT_CODE if it was already set correctly
+    if [ -z "$SETUP_EXIT_CODE" ]; then
+        SETUP_EXIT_CODE=$?
+    fi
     if [ $SETUP_EXIT_CODE -eq 124 ]; then
         echo "⏰ Setup script timeout (20 minutes) - checking if it completed..."
         # Check if script actually completed despite timeout
