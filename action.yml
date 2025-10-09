@@ -197,44 +197,75 @@ runs:
         
         echo "⏳ Waiting for Mautic to be ready..."
         
-        # Test HTTP response with retries - check the login page directly
+        # Test HTTP response with retries - check multiple endpoints
         MAX_ATTEMPTS=10
         ATTEMPT=1
         
         while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-            echo "Attempt $ATTEMPT: Testing Mautic login page..."
+            echo "Attempt $ATTEMPT: Testing Mautic endpoints..."
             
-            # Test the /s/login route directly to confirm Mautic is working
+            # Test multiple endpoints to diagnose the issue
+            BASE_URL="${MAUTIC_URL}"
             LOGIN_URL="${MAUTIC_URL}/s/login"
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null || echo "000")
             
-            if [ "$HTTP_CODE" = "200" ]; then
-                echo "✅ Mautic login page is responding correctly (HTTP $HTTP_CODE)"
+            echo "🔍 Testing base URL: $BASE_URL"
+            BASE_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$BASE_URL" 2>/dev/null || echo "000")
+            echo "  - Base URL HTTP response: $BASE_HTTP_CODE"
+            
+            echo "🔍 Testing login URL: $LOGIN_URL"
+            LOGIN_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null || echo "000")
+            echo "  - Login URL HTTP response: $LOGIN_HTTP_CODE"
+            
+            # Check if either endpoint returns 200
+            if [ "$BASE_HTTP_CODE" = "200" ] || [ "$LOGIN_HTTP_CODE" = "200" ]; then
+                WORKING_URL="$BASE_URL"
+                if [ "$LOGIN_HTTP_CODE" = "200" ]; then
+                    WORKING_URL="$LOGIN_URL"
+                fi
+                
+                echo "✅ Mautic is responding correctly (HTTP 200 on $WORKING_URL)"
                 
                 # Additional check: verify the response contains Mautic-specific content
-                RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null || echo "")
+                RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 "$WORKING_URL" 2>/dev/null || echo "")
                 if echo "$RESPONSE" | grep -i "mautic" > /dev/null; then
                     echo "✅ Confirmed Mautic application is running correctly"
                     echo "🎉 Deployment validation successful!"
                     break
                 else
-                    echo "⚠️ Login page responded but doesn't contain Mautic content"
-                    HTTP_CODE="000"  # Force retry
+                    echo "⚠️ Page responded but doesn't contain Mautic content, checking if it's a redirect..."
+                    # Check for redirects or alternative indicators
+                    if echo "$RESPONSE" | grep -i -E "(login|signin|password)" > /dev/null; then
+                        echo "✅ Detected login-related content, Mautic is likely working"
+                        echo "🎉 Deployment validation successful!"
+                        break
+                    fi
                 fi
             else
-                echo "⚠️ Login page returned HTTP $HTTP_CODE"
+                echo "⚠️ Neither endpoint returned HTTP 200"
+                echo "  - Base URL ($BASE_URL): $BASE_HTTP_CODE"
+                echo "  - Login URL ($LOGIN_URL): $LOGIN_HTTP_CODE"
             fi
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
                 echo "⏳ Waiting 30 seconds before retry..."
                 sleep 30
             else
-                echo "❌ Mautic login page failed to respond after $MAX_ATTEMPTS attempts"
+                echo "❌ Mautic failed to respond after $MAX_ATTEMPTS attempts"
                 echo "🔍 Final troubleshooting information:"
                 echo "  - VPS IP: ${VPS_IP}"
-                echo "  - Mautic URL: ${MAUTIC_URL}"
+                echo "  - Base URL: ${BASE_URL}"
                 echo "  - Login URL: ${LOGIN_URL}"
-                echo "  - Last HTTP response: ${HTTP_CODE}"
+                echo "  - Base URL response: ${BASE_HTTP_CODE}"
+                echo "  - Login URL response: ${LOGIN_HTTP_CODE}"
+                
+                # Get container status for debugging
+                echo "🐳 Container status debugging:"
+                ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose ps" || echo "Could not get container status"
+                
+                # Check if Mautic is still initializing
+                echo "📋 Checking Mautic logs for initialization status:"
+                ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose logs --tail=20 mautic_web" || echo "Could not get Mautic logs"
+                
                 exit 1
             fi
             

@@ -115,9 +115,10 @@ async function main() {
     }
     
     // Test HTTP connectivity
-    const testUrl = config.domainName 
-      ? `http://${config.domainName}/s/login`
-      : `http://${config.ipAddress}:${config.port}/s/login`;
+    const baseUrl = config.domainName 
+      ? `http://${config.domainName}`
+      : `http://${config.ipAddress}:${config.port}`;
+    const testUrl = `${baseUrl}/s/login`;
     
     Logger.log(`Testing connectivity to: ${testUrl}`, '🌐');
     
@@ -143,8 +144,8 @@ async function main() {
     Logger.log(`📧 Admin email: ${config.emailAddress}`);
     Logger.log(`🔒 Admin password: [configured]`);
     
-    // Set output variables for GitHub Actions
-    console.log(`::set-output name=mautic_url::${testUrl}`);
+    // Set output variables for GitHub Actions (use base URL for mautic_url)
+    console.log(`::set-output name=mautic_url::${baseUrl}`);
     console.log(`::set-output name=admin_email::${config.emailAddress}`);
     console.log(`::set-output name=deployment_status::success`);
 
