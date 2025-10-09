@@ -144,10 +144,22 @@ async function main() {
     Logger.log(`📧 Admin email: ${config.emailAddress}`);
     Logger.log(`🔒 Admin password: [configured]`);
     
-    // Set output variables for GitHub Actions (use base URL for mautic_url)
-    console.log(`::set-output name=mautic_url::${baseUrl}`);
-    console.log(`::set-output name=admin_email::${config.emailAddress}`);
-    console.log(`::set-output name=deployment_status::success`);
+    // Set output variables for GitHub Actions using environment files
+    const outputFile = Deno.env.get("GITHUB_OUTPUT");
+    if (outputFile) {
+      const outputs = [
+        `mautic_url=${baseUrl}`,
+        `admin_email=${config.emailAddress}`,
+        `deployment_status=success`
+      ].join('\n') + '\n';
+      
+      await Deno.writeTextFile(outputFile, outputs, { append: true });
+    } else {
+      // Fallback for non-GitHub Actions environments
+      console.log(`mautic_url=${baseUrl}`);
+      console.log(`admin_email=${config.emailAddress}`);
+      console.log(`deployment_status=success`);
+    }
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

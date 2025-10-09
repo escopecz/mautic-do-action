@@ -322,6 +322,8 @@ while [ $COUNTER -lt $TIMEOUT ]; do
     if [ "$SSH_CHECK_RESULT" = "COMPLETED" ]; then
         # Setup completed, extract exit code
         SETUP_EXIT_CODE=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "grep 'SETUP_COMPLETED_' /var/log/setup-dc.log | tail -1 | cut -d'_' -f2" 2>/dev/null || echo "255")
+        # Ensure SETUP_EXIT_CODE is not empty
+        SETUP_EXIT_CODE=${SETUP_EXIT_CODE:-255}
         echo "✅ Setup script completed with exit code: ${SETUP_EXIT_CODE}"
         break
     elif [ "$SSH_CHECK_RESULT" = "SSH_FAILED" ]; then
@@ -355,8 +357,8 @@ if [ $COUNTER -ge $TIMEOUT ]; then
     fi
 fi
 
-# Check final status
-if [ "$SETUP_EXIT_CODE" -ne 0 ]; then
+# Check final status  
+if [ -n "$SETUP_EXIT_CODE" ] && [ "$SETUP_EXIT_CODE" -ne 0 ]; then
     echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
     echo "🔍 Debug information:"
     echo "  - VPS IP: ${VPS_IP}"

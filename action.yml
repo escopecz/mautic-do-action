@@ -216,14 +216,23 @@ runs:
             LOGIN_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null || echo "000")
             echo "  - Login URL HTTP response: $LOGIN_HTTP_CODE"
             
-            # Check if either endpoint returns 200
-            if [ "$BASE_HTTP_CODE" = "200" ] || [ "$LOGIN_HTTP_CODE" = "200" ]; then
+            # Check if either endpoint returns 200 or 302 (redirect is OK)
+            if [ "$BASE_HTTP_CODE" = "200" ] || [ "$LOGIN_HTTP_CODE" = "200" ] || [ "$BASE_HTTP_CODE" = "302" ] || [ "$LOGIN_HTTP_CODE" = "302" ]; then
                 WORKING_URL="$BASE_URL"
-                if [ "$LOGIN_HTTP_CODE" = "200" ]; then
+                WORKING_CODE="$BASE_HTTP_CODE"
+                if [ "$LOGIN_HTTP_CODE" = "200" ] || [ "$LOGIN_HTTP_CODE" = "302" ]; then
                     WORKING_URL="$LOGIN_URL"
+                    WORKING_CODE="$LOGIN_HTTP_CODE"
                 fi
                 
-                echo "✅ Mautic is responding correctly (HTTP 200 on $WORKING_URL)"
+                echo "✅ Mautic is responding correctly (HTTP $WORKING_CODE on $WORKING_URL)"
+                
+                # For 302 redirects, this is normal for fresh Mautic installations
+                if [ "$WORKING_CODE" = "302" ]; then
+                    echo "📋 HTTP 302 detected - Mautic is redirecting (normal for fresh installation/setup)"
+                    echo "🎉 Deployment validation successful!"
+                    break
+                fi
                 
                 # Additional check: verify the response contains Mautic-specific content
                 RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 "$WORKING_URL" 2>/dev/null || echo "")
@@ -252,13 +261,13 @@ runs:
                     ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose ps" || echo "Could not get container status"
                     
                     echo "📋 Mautic web container logs (last 20 lines):"
-                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose logs --tail=20 mautic_web" || echo "Could not get Mautic logs"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && timeout 30 docker compose logs --tail=20 mautic_web" || echo "Could not get Mautic logs (connection timeout)"
                     
                     echo "📋 Checking if Mautic is installed in container:"
-                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose exec -T mautic_web ls -la /var/www/html/" || echo "Could not list Mautic files"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && timeout 15 docker compose exec -T mautic_web ls -la /var/www/html/" || echo "Could not list Mautic files (connection timeout)"
                     
                     echo "📋 Checking Apache error logs:"
-                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose exec -T mautic_web tail -10 /var/log/apache2/error.log" || echo "Could not get Apache error logs"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && timeout 15 docker compose exec -T mautic_web tail -10 /var/log/apache2/error.log" || echo "Could not get Apache error logs (connection timeout)"
                 fi
             fi
             
