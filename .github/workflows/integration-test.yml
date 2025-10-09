@@ -161,7 +161,7 @@ jobs:
           if [ -f ./upgrade-test.log ]; then
             echo "📋 Checking upgrade log for update indicators..."
             
-            if grep -q "Version update detected" ./upgrade-test.log; then
+            if grep -q "Version mismatch:" ./upgrade-test.log; then
               echo "✅ PASS: Version update was detected"
             else
               echo "❌ FAIL: Version update was not detected"
@@ -170,13 +170,13 @@ jobs:
               exit 1
             fi
             
-            if grep -q "Containers updated successfully" ./upgrade-test.log; then
+            if grep -q "Containers recreated successfully" ./upgrade-test.log; then
               echo "✅ PASS: Containers were updated successfully"
             else
               echo "❌ FAIL: Container update failed"
               echo "📋 Checking for alternative success indicators..."
-              if grep -q "Docker image version is up to date" ./upgrade-test.log; then
-                echo "✅ PASS: Images were already at target version"
+              if grep -q "Mautic update completed successfully" ./upgrade-test.log; then
+                echo "✅ PASS: Mautic update completed successfully"
               else
                 echo "❌ No success indicators found"
                 exit 1
