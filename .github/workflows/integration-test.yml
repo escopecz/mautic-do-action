@@ -143,7 +143,7 @@ jobs:
             cat .env
             echo ""
             echo "🚀 Re-running setup script to trigger upgrade detection..."
-            ./setup-dc.sh 2>&1 | tee /var/log/upgrade-test.log
+            ./setup 2>&1 | tee /var/log/upgrade-test.log
           EOF
           
           echo "✅ Version upgrade test completed"

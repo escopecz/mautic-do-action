@@ -405,7 +405,7 @@ else
     fi
 fi
 
-# Handle any errors
+# Handle any errors - but check if setup was actually completed
 if [ $SETUP_EXIT_CODE -ne 0 ]; then
     echo "❌ Setup script failed with exit code: ${SETUP_EXIT_CODE}"
     echo "🔍 Debug information:"
@@ -425,6 +425,7 @@ if [ $SETUP_EXIT_CODE -ne 0 ]; then
         if grep -q "SETUP_COMPLETED" ./setup-dc.log; then
             echo "✅ Setup actually completed despite exit code!"
             echo "🔄 Continuing with outputs since setup marked as complete..."
+            SETUP_EXIT_CODE=0  # Override the exit code since setup completed successfully
         else
             echo "❌ Setup did not complete successfully"
             exit 1
@@ -433,6 +434,12 @@ if [ $SETUP_EXIT_CODE -ne 0 ]; then
         echo "❌ Could not retrieve setup log for debugging"
         exit 1
     fi
+fi
+
+# Final check after potential override
+if [ $SETUP_EXIT_CODE -ne 0 ]; then
+    echo "❌ Setup failed and could not be recovered"
+    exit 1
 else
     echo "✅ Setup script completed successfully with exit code: ${SETUP_EXIT_CODE}"
 fi
