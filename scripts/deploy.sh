@@ -424,8 +424,7 @@ fi
 echo "📥 Downloading setup log..."
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./setup-dc.log
 
-# Clean up SSH key
-rm -f ~/.ssh/id_rsa
+# Note: SSH key cleanup moved to action.yml after validation
 
 # Set outputs
 echo "🔍 Preparing outputs..."

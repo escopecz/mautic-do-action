@@ -256,7 +256,7 @@ services:
     ports:
       - "${this.config.port}:80"
     volumes:
-      - ./mautic_data:/var/www/html
+      - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs
     environment:
       - MAUTIC_DB_HOST=mautic_db
@@ -268,20 +268,21 @@ services:
       - MAUTIC_RUN_CRON_JOBS=true
       - DOCKER_MAUTIC_ROLE=mautic_web
     depends_on:
-      - mautic_db
+      mautic_db:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/s/login"]
+      test: ["CMD", "curl", "-f", "http://localhost"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   mautic_cron:
     image: mautic/mautic:${baseVersion}
     container_name: mautic_cron
     restart: unless-stopped
     volumes:
-      - ./mautic_data:/var/www/html
+      - mautic_data:/var/www/html
       - ./logs:/var/www/html/var/logs
     environment:
       - MAUTIC_DB_HOST=mautic_db
@@ -292,7 +293,8 @@ services:
       - MAUTIC_RUN_CRON_JOBS=true
       - DOCKER_MAUTIC_ROLE=mautic_cron
     depends_on:
-      - mautic_db
+      mautic_db:
+        condition: service_healthy
     command: ["sh", "-c", "while true; do php /var/www/html/bin/console mautic:segments:update && php /var/www/html/bin/console mautic:campaigns:update && php /var/www/html/bin/console mautic:campaigns:trigger && sleep 300; done"]
 
   mautic_db:

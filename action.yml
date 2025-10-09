@@ -198,7 +198,7 @@ runs:
         echo "⏳ Waiting for Mautic to be ready..."
         
         # Test HTTP response with retries - check multiple endpoints
-        MAX_ATTEMPTS=10
+        MAX_ATTEMPTS=3
         ATTEMPT=1
         
         while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
@@ -244,6 +244,22 @@ runs:
                 echo "⚠️ Neither endpoint returned HTTP 200"
                 echo "  - Base URL ($BASE_URL): $BASE_HTTP_CODE"
                 echo "  - Login URL ($LOGIN_URL): $LOGIN_HTTP_CODE"
+                
+                # Add immediate debugging on first failure
+                if [ $ATTEMPT -eq 1 ]; then
+                    echo "🐳 Immediate Docker debugging (first failure):"
+                    echo "📋 Container status:"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose ps" || echo "Could not get container status"
+                    
+                    echo "📋 Mautic web container logs (last 20 lines):"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose logs --tail=20 mautic_web" || echo "Could not get Mautic logs"
+                    
+                    echo "📋 Checking if Mautic is installed in container:"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose exec -T mautic_web ls -la /var/www/html/" || echo "Could not list Mautic files"
+                    
+                    echo "📋 Checking Apache error logs:"
+                    ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose exec -T mautic_web tail -10 /var/log/apache2/error.log" || echo "Could not get Apache error logs"
+                fi
             fi
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
@@ -296,3 +312,12 @@ runs:
       with:
         name: mautic-deployment-log
         path: ./setup-dc.log
+
+    - name: Cleanup
+      shell: bash
+      if: always()
+      run: |
+        echo "🧹 Cleaning up SSH keys and temporary files..."
+        rm -f ~/.ssh/id_rsa
+        rm -f ~/.ssh/id_rsa.pub
+        echo "✅ Cleanup completed"
