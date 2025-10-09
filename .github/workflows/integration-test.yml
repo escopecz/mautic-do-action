@@ -194,7 +194,7 @@ jobs:
             
             # Check that it's actually the new version by inspecting container
             echo "🔍 Verifying container is running new version..."
-            CONTAINER_IMAGE=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "docker inspect mautic_app --format='{{.Config.Image}}' 2>/dev/null || echo 'unknown'")
+            CONTAINER_IMAGE=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "docker inspect mautic_web --format='{{.Config.Image}}' 2>/dev/null || echo 'unknown'")
             echo "📦 Container image: $CONTAINER_IMAGE"
             
             if echo "$CONTAINER_IMAGE" | grep -q "6.0.5-apache"; then
