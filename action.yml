@@ -108,10 +108,13 @@ inputs:
 outputs:
   vps-ip:
     description: 'IP address of the created VPS'
+    value: ${{ steps.deploy.outputs.vps-ip }}
   mautic-url:
     description: 'URL to access your Mautic instance'
+    value: ${{ steps.deploy.outputs.mautic-url }}
   deployment-log:
     description: 'Path to the deployment log artifact'
+    value: ${{ steps.deploy.outputs.deployment-log }}
 
 runs:
   using: 'composite'
