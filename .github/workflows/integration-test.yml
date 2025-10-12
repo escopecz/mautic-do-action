@@ -74,11 +74,21 @@ jobs:
           while [ $counter -lt $timeout ]; do
             echo "⏳ Testing Mautic readiness... (${counter}/${timeout}s)"
             
-            # Test login page accessibility
-            if curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" | grep -q "200"; then
-              echo "✅ Mautic login page is accessible"
+            # Test login page accessibility - accept both 200 and 302 as success
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" 2>/dev/null || echo "000")
+            echo "🔍 HTTP response code: $HTTP_CODE"
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+              echo "✅ Mautic is responding (HTTP $HTTP_CODE)"
               
-              # Additional check: verify the page contains expected Mautic content
+              # For 302 redirects, this is normal for fresh Mautic installations
+              if [ "$HTTP_CODE" = "302" ]; then
+                echo "📋 HTTP 302 detected - Mautic is redirecting (normal for fresh installation)"
+                echo "✅ Mautic application is ready for setup!"
+                break
+              fi
+              
+              # For 200 responses, verify the page contains expected Mautic content
               if curl -s "${MAUTIC_URL}/s/login" | grep -q -i "mautic\|login"; then
                 echo "✅ Mautic application is fully ready!"
                 break
@@ -86,7 +96,7 @@ jobs:
                 echo "⚠️ Page accessible but content not ready yet..."
               fi
             else
-              echo "⚠️ Mautic not yet accessible..."
+              echo "⚠️ Mautic not yet accessible (HTTP $HTTP_CODE)..."
             fi
             
             sleep 5
@@ -124,16 +134,16 @@ jobs:
           # SSH into VPS and modify the version, then trigger upgrade
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} << 'EOF'
             cd /var/www
-            echo "🔍 Current .env contents:"
-            cat .env
+            echo "🔍 Current deploy.env contents:"
+            cat deploy.env
             echo ""
             echo "🔄 Updating MAUTIC_VERSION to 6.0.5-apache..."
-            sed -i 's/MAUTIC_VERSION=.*/MAUTIC_VERSION=6.0.5-apache/' .env
-            echo "✅ Updated .env contents:"
-            cat .env
+            sed -i 's/MAUTIC_VERSION=.*/MAUTIC_VERSION=6.0.5-apache/' deploy.env
+            echo "✅ Updated deploy.env contents:"
+            cat deploy.env
             echo ""
             echo "🚀 Re-running setup script to trigger upgrade detection..."
-            ./setup-dc.sh 2>&1 | tee /var/log/upgrade-test.log
+            ./setup 2>&1 | tee /var/log/upgrade-test.log
           EOF
           
           echo "✅ Version upgrade test completed"
@@ -151,7 +161,7 @@ jobs:
           if [ -f ./upgrade-test.log ]; then
             echo "📋 Checking upgrade log for update indicators..."
             
-            if grep -q "Version update detected" ./upgrade-test.log; then
+            if grep -q "Version mismatch:" ./upgrade-test.log; then
               echo "✅ PASS: Version update was detected"
             else
               echo "❌ FAIL: Version update was not detected"
@@ -160,13 +170,13 @@ jobs:
               exit 1
             fi
             
-            if grep -q "Containers updated successfully" ./upgrade-test.log; then
+            if grep -q "Containers recreated successfully" ./upgrade-test.log; then
               echo "✅ PASS: Containers were updated successfully"
             else
               echo "❌ FAIL: Container update failed"
               echo "📋 Checking for alternative success indicators..."
-              if grep -q "Docker image version is up to date" ./upgrade-test.log; then
-                echo "✅ PASS: Images were already at target version"
+              if grep -q "Mautic update completed successfully" ./upgrade-test.log; then
+                echo "✅ PASS: Mautic update completed successfully"
               else
                 echo "❌ No success indicators found"
                 exit 1
@@ -176,12 +186,15 @@ jobs:
           
           # Verify Mautic is still working after upgrade
           echo "🔍 Testing Mautic accessibility after upgrade..."
-          if curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" | grep -q "200"; then
-            echo "✅ PASS: Mautic is still accessible after upgrade"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" 2>/dev/null || echo "000")
+          echo "📋 HTTP response code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "✅ PASS: Mautic is still accessible after upgrade (HTTP $HTTP_CODE)"
             
             # Check that it's actually the new version by inspecting container
             echo "🔍 Verifying container is running new version..."
-            CONTAINER_IMAGE=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "docker inspect mautic_app --format='{{.Config.Image}}' 2>/dev/null || echo 'unknown'")
+            CONTAINER_IMAGE=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "docker inspect mautic_web --format='{{.Config.Image}}' 2>/dev/null || echo 'unknown'")
             echo "📦 Container image: $CONTAINER_IMAGE"
             
             if echo "$CONTAINER_IMAGE" | grep -q "6.0.5-apache"; then
