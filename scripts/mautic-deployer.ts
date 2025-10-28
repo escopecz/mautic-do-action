@@ -435,8 +435,8 @@ volumes:
         throw new Error('mautic:install command not available or hanging');
       }
       
-      // Run the actual installation with REAL timeout and process killing
-      Logger.log('Starting Mautic installation with 3-minute timeout...', '🚀');
+      // Run the actual installation with timeout using ProcessManager
+      Logger.log('Starting Mautic installation...', '🚀');
       
       const siteUrl = this.config.domainName 
         ? `https://${this.config.domainName}` 
@@ -446,56 +446,29 @@ volumes:
       Logger.log('Database: mautic_db', '🗄️');
       Logger.log(`Admin email: ${this.config.emailAddress}`, '👤');
       
-      // Use Deno.Command with spawn for proper process control
-      const command = new Deno.Command('docker', {
-        args: [
-          'exec', 
-          '--user', 'www-data',
-          '--workdir', '/var/www/html',
-          'mautic_web', 
-          'php', './bin/console', 'mautic:install',
-          siteUrl,
-          '--admin_email=' + this.config.emailAddress,
-          '--admin_password=' + this.config.mauticPassword,
-          '--force',
-          '--no-interaction',
-          '-vvv'
-        ],
-        stdout: 'piped',
-        stderr: 'piped'
-      });
+      // Use timeout command to limit installation time
+      const installResult = await ProcessManager.run([
+        'timeout', '300', // 5 minutes timeout
+        'docker', 'exec', 
+        '--user', 'www-data',
+        '--workdir', '/var/www/html',
+        'mautic_web', 
+        'php', './bin/console', 'mautic:install',
+        siteUrl,
+        '--admin_email=' + this.config.emailAddress,
+        '--admin_password=' + this.config.mauticPassword,
+        '--force',
+        '--no-interaction',
+        '-vvv'
+      ], { timeout: 320000 }); // ProcessManager timeout slightly longer than shell timeout
       
-      const process = command.spawn();
-      
-      // Set up timeout that actually kills the process
-      const timeoutId = setTimeout(() => {
-        Logger.log('Installation timed out after 3 minutes - killing process', '⏰');
-        process.kill('SIGTERM');
-        setTimeout(() => {
-          process.kill('SIGKILL'); // Force kill if SIGTERM doesn't work
-        }, 5000);
-      }, 180000); // 3 minutes
-      
-      try {
-        const { code, stdout, stderr } = await process.output();
-        clearTimeout(timeoutId);
-        
-        const output = new TextDecoder().decode(stdout) + new TextDecoder().decode(stderr);
-        
-        Logger.log(`Installation result (exit code: ${code}):`, '📋');
-        Logger.log(output, '📄');
-        
-        if (code === 0) {
-          Logger.success('✅ Mautic installation completed successfully');
-        } else {
-          throw new Error(`Installation failed with exit code ${code}: ${output}`);
-        }
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error instanceof Error && error.message.includes('signal')) {
-          throw new Error('Installation was killed due to timeout after 3 minutes');
-        }
-        throw error;
+      if (installResult.success) {
+        Logger.success('✅ Mautic installation completed successfully');
+        Logger.log(installResult.output, '📄');
+      } else {
+        Logger.error('❌ Mautic installation failed');
+        Logger.log(installResult.output, '📄');
+        throw new Error(`Installation failed: ${installResult.output}`);
       }
       
     } catch (error) {
