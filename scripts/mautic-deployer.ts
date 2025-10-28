@@ -393,28 +393,56 @@ volumes:
   }
 
   /**
-   * Run Mautic installation inside the container
+   * Run Mautic installation inside the container with streaming output
    */
   private async runMauticInstallation(): Promise<void> {
     Logger.info('🔧 Running Mautic installation...');
     
     try {
-      // Run the Mautic installation command
-      await ProcessManager.run([
+      // Check if mautic:install command is available
+      Logger.log('Checking available Mautic console commands...', '🔍');
+      const commandsList = await ProcessManager.run([
+        'docker', 'exec', 'mautic_web', 
+        'php', '/var/www/html/bin/console', 'list', 'mautic'
+      ]);
+      Logger.log(`Available Mautic commands:\n${commandsList.output}`);
+      
+      // Run the proper mautic:install command
+      Logger.log('Running mautic:install command...', '🚀');
+      
+      // Construct the site URL
+      const siteUrl = this.config.domainName 
+        ? `https://${this.config.domainName}` 
+        : `http://${this.config.ipAddress}:${this.config.port}`;
+      
+      const installResult = await ProcessManager.run([
         'docker', 'exec', 'mautic_web', 
         'php', '/var/www/html/bin/console', 'mautic:install',
-        `--db_host=mautic_db`,
-        `--db_name=${this.config.mysqlDatabase}`,
-        `--db_user=${this.config.mysqlUser}`,
-        `--db_password=${this.config.mysqlPassword}`,
-        `--admin_email=${this.config.emailAddress}`,
-        `--admin_password=${this.config.mauticPassword}`,
-        '--force'
+        siteUrl, // Required positional argument
+        '--db_host=mautic_db',
+        '--db_name=' + this.config.mysqlDatabase,
+        '--db_user=' + this.config.mysqlUser,
+        '--db_password=' + this.config.mysqlPassword,
+        '--admin_firstname=Admin',
+        '--admin_lastname=User',
+        '--admin_username=admin',
+        '--admin_email=' + this.config.emailAddress,
+        '--admin_password=' + this.config.mauticPassword,
+        '--force',
+        '--no-interaction'
       ]);
       
-      Logger.success('✅ Mautic installation completed');
+      Logger.log(`Installation output:\n${installResult.output}`);
+      
+      if (installResult.success) {
+        Logger.success('✅ Mautic installation completed successfully');
+      } else {
+        throw new Error(`Installation failed with output: ${installResult.output}`);
+      }
+      
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Logger.error(`Mautic installation failed: ${errorMessage}`);
       throw new Error(`Mautic installation failed: ${errorMessage}`);
     }
   }

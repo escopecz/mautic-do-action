@@ -232,15 +232,14 @@ runs:
                         "$REDIRECT_URL" 2>/dev/null || echo "000")
                     echo "📋 Redirect destination returned HTTP $FINAL_HTTP_CODE"
                     
-                    # Accept 200 after redirect (successful page load) OR if redirecting to installer (installation completed)
-                    if [ "$FINAL_HTTP_CODE" = "200" ] || echo "$REDIRECT_URL" | grep -q "/installer"; then
-                        if echo "$REDIRECT_URL" | grep -q "/installer"; then
-                            echo "✅ Mautic is responding correctly (redirected to installer - installation completed)"
-                        else
-                            echo "✅ Mautic is responding correctly (redirected to working page)"
-                        fi
+                    # Accept 200 after redirect (successful page load) - installer redirect means installation failed
+                    if [ "$FINAL_HTTP_CODE" = "200" ]; then
+                        echo "✅ Mautic is responding correctly (redirected to working page)"
                         echo "🎉 Deployment validation successful!"
                         break
+                    elif echo "$REDIRECT_URL" | grep -q "/installer"; then
+                        echo "⚠️ Mautic is redirecting to installer - installation may have failed"
+                        echo "📋 This indicates the installation process didn't complete properly"
                     fi
                 fi
             else
