@@ -129,8 +129,8 @@ export class MauticDeployer {
         throw new Error('Containers failed to become healthy after update');
       }
       
-      // Warm up cache after update
-      await this.warmupCache();
+      // Clear cache after update
+      await this.clearCache('after update');
       
       Logger.success('Mautic update completed successfully');
       return true;
@@ -191,14 +191,14 @@ export class MauticDeployer {
       // Run Mautic installation inside the container
       await this.runMauticInstallation();
       
-      // Warm up Mautic cache for better performance
-      await this.warmupCache();
+      // Clear cache after installation
+      await this.clearCache('after installation');
       
       // Install themes and plugins if specified
       if (this.config.mauticThemes || this.config.mauticPlugins) {
         await this.installThemesAndPlugins();
-        // Warm up cache again after installing packages
-        await this.warmupCache();
+        // Clear cache after installing packages
+        await this.clearCache('after installing themes/plugins');
       }
       
       Logger.success('Mautic installation completed successfully');
@@ -479,28 +479,23 @@ volumes:
   }
 
   /**
-   * Warm up Mautic cache for better performance
+   * Clear Mautic cache using simple file removal
    */
-  private async warmupCache(): Promise<void> {
-    Logger.info('🔥 Warming up Mautic cache...');
+  private async clearCache(context: string): Promise<void> {
+    Logger.info(`🧹 Clearing cache ${context}...`);
     
     try {
-      // Clear existing cache first
+      // Use simple rm command - much faster than PHP console commands
+      // Clear both prod and dev cache directories to be safe
       await ProcessManager.run([
         'docker', 'exec', 'mautic_web', 
-        'php', '/var/www/html/bin/console', 'cache:clear', '--env=prod'
-      ]);
+        'bash', '-c', 'rm -rf /var/www/html/var/cache/prod* /var/www/html/var/cache/dev* || true'
+      ], { timeout: 30000 }); // 30 second timeout - should be very fast
       
-      // Warm up cache
-      await ProcessManager.run([
-        'docker', 'exec', 'mautic_web', 
-        'php', '/var/www/html/bin/console', 'cache:warmup', '--env=prod'
-      ]);
-      
-      Logger.success('✅ Cache warmup completed');
+      Logger.success(`✅ Cache cleared ${context}`);
     } catch (error) {
-      // Cache warmup is not critical - log but don't fail deployment
-      Logger.error(`⚠️ Cache warmup failed (non-critical): ${error}`);
+      // Cache clearing is not critical - log but don't fail deployment
+      Logger.error(`⚠️ Cache clearing failed ${context} (non-critical): ${error}`);
     }
   }
 }
