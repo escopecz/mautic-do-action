@@ -153,6 +153,9 @@ async function main() {
     Logger.log(`📧 Admin email: ${config.emailAddress}`);
     Logger.log(`🔒 Admin password: [configured]`);
     
+    // Write completion marker for deploy script monitoring
+    console.log('deployment_status::success');
+    
     // Set output variables for GitHub Actions using environment files
     const outputFile = Deno.env.get("GITHUB_OUTPUT");
     if (outputFile) {
