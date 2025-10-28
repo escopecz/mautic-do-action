@@ -224,6 +224,7 @@ MAUTIC_DB_PORT=3306
 MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
 MAUTIC_RUN_CRON_JOBS=true
 DOCKER_MAUTIC_ROLE=mautic_web
+DOCKER_MAUTIC_LOAD_TEST_DATA=false
 
 # MySQL Configuration  
 MYSQL_ROOT_PASSWORD=${this.config.mysqlRootPassword}
@@ -268,16 +269,19 @@ services:
       - "${this.config.port}:80"
     volumes:
       - mautic_data:/var/www/html
+      - mautic_config:/var/www/html/config
       - ./logs:/var/www/html/var/logs
+      - mautic_media:/var/www/html/docroot/media
     environment:
       - MAUTIC_DB_HOST=mautic_db
       - MAUTIC_DB_USER=${this.config.mysqlUser}
       - MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
-      - MAUTIC_DB_NAME=${this.config.mysqlDatabase}
+      - MAUTIC_DB_DATABASE=${this.config.mysqlDatabase}
       - MAUTIC_DB_PORT=3306
       - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
       - MAUTIC_RUN_CRON_JOBS=true
       - DOCKER_MAUTIC_ROLE=mautic_web
+      - DOCKER_MAUTIC_LOAD_TEST_DATA=false
     depends_on:
       mautic_db:
         condition: service_healthy
@@ -299,7 +303,7 @@ services:
       - MAUTIC_DB_HOST=mautic_db
       - MAUTIC_DB_USER=${this.config.mysqlUser}
       - MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
-      - MAUTIC_DB_NAME=${this.config.mysqlDatabase}
+      - MAUTIC_DB_DATABASE=${this.config.mysqlDatabase}
       - MAUTIC_DB_PORT=3306
       - MAUTIC_RUN_CRON_JOBS=true
       - DOCKER_MAUTIC_ROLE=mautic_cron
@@ -329,6 +333,8 @@ services:
 
 volumes:
   mautic_data:
+  mautic_config:
+  mautic_media:
   mysql_data:
 `.trim();
     
@@ -430,7 +436,7 @@ volumes:
       }
       
       // Run the actual installation with timeout
-      Logger.log('Starting Mautic installation with 5-minute timeout...', '🚀');
+      Logger.log('Starting Mautic installation with 3-minute timeout...', '🚀');
       
       const siteUrl = this.config.domainName 
         ? `https://${this.config.domainName}` 
@@ -440,24 +446,28 @@ volumes:
       Logger.log('Database: mautic_db', '🗄️');
       Logger.log(`Admin email: ${this.config.emailAddress}`, '👤');
       
-      const installResult = await ProcessManager.run([
-        'docker', 'exec', 'mautic_web', 
-        'timeout', '300',  // 5 minute timeout
-        'php', '/var/www/html/bin/console', 'mautic:install',
+      // Use Promise.race with timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Installation timed out after 3 minutes'));
+        }, 180000); // 3 minutes
+      });
+      
+      const installPromise = ProcessManager.run([
+        'docker', 'exec', 
+        '--user', 'www-data',
+        '--workdir', '/var/www/html',
+        'mautic_web', 
+        'php', './bin/console', 'mautic:install',
         siteUrl,
-        '--db_host=mautic_db',
-        '--db_name=' + this.config.mysqlDatabase,
-        '--db_user=' + this.config.mysqlUser,
-        '--db_password=' + this.config.mysqlPassword,
-        '--admin_firstname=Admin',
-        '--admin_lastname=User',
-        '--admin_username=admin',
         '--admin_email=' + this.config.emailAddress,
         '--admin_password=' + this.config.mauticPassword,
         '--force',
         '--no-interaction',
         '-vvv'
-      ]);
+      ], { timeout: 180000 }); // Also set ProcessManager timeout
+      
+      const installResult = await Promise.race([installPromise, timeoutPromise]);
       
       Logger.log(`Installation result (exit code: ${installResult.exitCode}):`, '📋');
       Logger.log(installResult.output, '📄');
