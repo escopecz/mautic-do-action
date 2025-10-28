@@ -331,8 +331,18 @@ SETUP_EXIT_CODE=255
 PREVIOUS_LOG_TAIL=""
 
 while [ $COUNTER -lt $TIMEOUT ]; do
-    # Check if setup process is still running first
-    SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f './setup' || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
+    # Check if setup process is still running - be more specific with process detection
+    SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f '^[^ ]*setup\$' | head -1 || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
+    
+    # Quick check: if log shows completion indicators, exit immediately
+    if [ $COUNTER -ge 30 ]; then  # After 30 seconds, start checking for completion
+        QUICK_SUCCESS_CHECK=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -c 'deployment_status::success\\|🎉.*Mautic setup completed\\|Access URL:.*login' /var/log/setup-dc.log 2>/dev/null || echo '0'" 2>/dev/null || echo "0")
+        if [ "$QUICK_SUCCESS_CHECK" -gt 0 ]; then
+            echo "✅ Setup completed successfully (found completion indicators in log)"
+            SETUP_EXIT_CODE=0
+            break
+        fi
+    fi
     
     if [ "$SETUP_RUNNING" = "NOT_RUNNING" ]; then
         echo "🏁 Setup process has completed (no longer running)"
@@ -383,6 +393,14 @@ while [ $COUNTER -lt $TIMEOUT ]; do
             # Show memory usage to monitor for memory pressure
             echo "💾 Current memory usage:"
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "free -h && echo 'Swap usage:' && swapon --show 2>/dev/null || echo 'No swap active'" 2>/dev/null || echo "Could not check memory"
+            
+            # During detailed progress check, also verify if setup actually completed
+            DETAILED_SUCCESS_CHECK=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -E 'deployment_status::success|🎉.*Mautic setup completed|Access URL:.*login' /var/log/setup-dc.log 2>/dev/null | tail -1" 2>/dev/null || echo "")
+            if [ -n "$DETAILED_SUCCESS_CHECK" ]; then
+                echo "✅ Setup actually completed successfully (found: $DETAILED_SUCCESS_CHECK)"
+                SETUP_EXIT_CODE=0
+                break
+            fi
         else
             echo "⏳ Setup running... (${COUNTER}s, PID: $SETUP_RUNNING)"
         fi
