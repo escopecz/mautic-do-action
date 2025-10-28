@@ -48,32 +48,38 @@ async function main() {
     const config = await loadDeploymentConfig();
     Logger.success('Configuration loaded and validated');
     
-    // Stop unattended upgrades
-    Logger.log('Stopping unattended-upgrades to prevent lock conflicts...', '🛑');
-    await ProcessManager.runShell('systemctl stop unattended-upgrades', { ignoreError: true });
-    await ProcessManager.runShell('systemctl disable unattended-upgrades', { ignoreError: true });
-    await ProcessManager.runShell('pkill -f unattended-upgrade', { ignoreError: true });
-    
-    // Handle package installation
-    await PackageManager.waitForLocks();
-    await PackageManager.updatePackages();
-    
-    // Install required packages
-    const packages = ['curl', 'wget', 'unzip', 'git', 'nano', 'htop', 'cron', 'netcat'];
-    if (config.domainName) {
-      packages.push('nginx', 'certbot', 'python3-certbot-nginx');
-    }
-    
-    for (const pkg of packages) {
-      await PackageManager.installPackage(pkg);
-    }
-    
-    // Initialize deployment manager
+    // Initialize deployment manager first to check installation status
     const deployer = new MauticDeployer(config);
     const sslManager = new SSLManager(config);
     
     // Check if Mautic is already installed
     const isInstalled = await deployer.isInstalled();
+    
+    if (isInstalled) {
+      Logger.success('Existing Mautic installation detected - skipping package installation');
+    } else {
+      Logger.log('Fresh deployment detected - installing required packages', '🆕');
+      
+      // Stop unattended upgrades
+      Logger.log('Stopping unattended-upgrades to prevent lock conflicts...', '🛑');
+      await ProcessManager.runShell('systemctl stop unattended-upgrades', { ignoreError: true });
+      await ProcessManager.runShell('systemctl disable unattended-upgrades', { ignoreError: true });
+      await ProcessManager.runShell('pkill -f unattended-upgrade', { ignoreError: true });
+      
+      // Handle package installation
+      await PackageManager.waitForLocks();
+      await PackageManager.updatePackages();
+      
+      // Install required packages
+      const packages = ['curl', 'wget', 'unzip', 'git', 'nano', 'htop', 'cron', 'netcat'];
+      if (config.domainName) {
+        packages.push('nginx', 'certbot', 'python3-certbot-nginx');
+      }
+      
+      for (const pkg of packages) {
+        await PackageManager.installPackage(pkg);
+      }
+    }
     
     if (isInstalled) {
       Logger.success('Existing Mautic installation detected');
