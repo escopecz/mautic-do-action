@@ -9,7 +9,6 @@
 
 import { Logger } from './logger.ts';
 import { ProcessManager } from './process-manager.ts';
-import { PackageManager } from './package-manager.ts';
 import { DockerManager } from './docker-manager.ts';
 import { MauticDeployer } from './mautic-deployer.ts';
 import { SSLManager } from './ssl-manager.ts';
@@ -39,10 +38,17 @@ async function main() {
     const pwd = await ProcessManager.runShell('pwd');
     const dockerVersion = await ProcessManager.runShell('docker --version', { ignoreError: true });
     
+    // Memory check
+    const memoryInfo = await ProcessManager.runShell('free -h', { ignoreError: true });
+    const swapInfo = await ProcessManager.runShell('swapon --show', { ignoreError: true });
+    
     Logger.log(`  - Current user: ${user.output}`);
     Logger.log(`  - Current directory: ${pwd.output}`);
     Logger.log(`  - Docker version: ${dockerVersion.output || 'Not available'}`);
+    Logger.log(`  - Memory status: ${memoryInfo.output || 'Not available'}`);
+    Logger.log(`  - Swap status: ${swapInfo.output || 'No swap active'}`);
     
+    Logger.log('Setting up memory-conservative environment for installation...', '💾');
     // Load configuration
     Logger.log('Loading deployment configuration...', '📋');
     const config = await loadDeploymentConfig();
@@ -56,28 +62,25 @@ async function main() {
     const isInstalled = await deployer.isInstalled();
     
     if (isInstalled) {
-      Logger.success('Existing Mautic installation detected - skipping package installation');
+      Logger.success('Existing Mautic installation detected - all packages already installed during VPS setup');
     } else {
-      Logger.log('Fresh deployment detected - installing required packages', '🆕');
+      Logger.log('Fresh deployment detected - packages already installed during VPS setup', '🆕');
       
-      // Stop unattended upgrades
-      Logger.log('Stopping unattended-upgrades to prevent lock conflicts...', '🛑');
+      // Stop unattended upgrades if they're still running
+      Logger.log('Ensuring unattended-upgrades are stopped...', '🛑');
       await ProcessManager.runShell('systemctl stop unattended-upgrades', { ignoreError: true });
-      await ProcessManager.runShell('systemctl disable unattended-upgrades', { ignoreError: true });
       await ProcessManager.runShell('pkill -f unattended-upgrade', { ignoreError: true });
       
-      // Handle package installation
-      await PackageManager.waitForLocks();
-      await PackageManager.updatePackages();
-      
-      // Install required packages
-      const packages = ['curl', 'wget', 'unzip', 'git', 'nano', 'htop', 'cron', 'netcat'];
-      if (config.domainName) {
-        packages.push('nginx', 'certbot', 'python3-certbot-nginx');
-      }
-      
-      for (const pkg of packages) {
-        await PackageManager.installPackage(pkg);
+      // Verify package availability
+      Logger.log('Verifying package installations...', '🔍');
+      const packageChecks = ['docker', 'nginx', 'curl', 'git'];
+      for (const pkg of packageChecks) {
+        const result = await ProcessManager.runShell(`which ${pkg}`, { ignoreError: true });
+        if (result.success) {
+          Logger.success(`✓ ${pkg} is available`);
+        } else {
+          Logger.warning(`⚠️ ${pkg} not found`);
+        }
       }
     }
     

@@ -296,6 +296,10 @@ fi
 # Run setup script
 echo "⚙️  Running compiled setup binary on server..."
 
+# Check initial memory status and swap configuration
+echo "💾 Pre-deployment memory status:"
+ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "echo 'Memory:' && free -h && echo 'Swap:' && swapon --show 2>/dev/null || echo 'No swap active'" 2>/dev/null || echo "Could not check memory"
+
 # Try background execution with polling instead of streaming
 echo "🔄 Starting setup script in background and monitoring progress..."
 
@@ -358,6 +362,10 @@ while [ $COUNTER -lt $TIMEOUT ]; do
         if [ $((COUNTER % 60)) -eq 0 ]; then
             echo "📄 Setup progress (${COUNTER}s, PID: $SETUP_RUNNING):"
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -n 3 /var/log/setup-dc.log 2>/dev/null || echo 'Setup in progress...'"
+            
+            # Show memory usage to monitor for memory pressure
+            echo "💾 Current memory usage:"
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "free -h && echo 'Swap usage:' && swapon --show 2>/dev/null || echo 'No swap active'" 2>/dev/null || echo "Could not check memory"
         else
             echo "⏳ Setup running... (${COUNTER}s, PID: $SETUP_RUNNING)"
         fi
