@@ -207,7 +207,7 @@ runs:
         while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT: Testing Mautic login page..."
             
-            # Test the login endpoint specifically 
+            # Test the login endpoint directly - should return HTTP 200
             LOGIN_URL="${MAUTIC_URL}/s/login"
             
             # Enhanced curl with better error handling
@@ -219,15 +219,16 @@ runs:
                 --retry-connrefused \
                 "$LOGIN_URL" 2>/dev/null || echo "000")
             
-            echo "⚠️ Login page returned HTTP $HTTP_CODE"
+            echo "📋 Login page returned HTTP $HTTP_CODE"
             
-            # Accept 200, 302 (redirect), 301 (moved), or 503 (temporary unavailable during startup)
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "301" ]; then
-                echo "✅ Mautic is responding correctly (HTTP $HTTP_CODE)"
+            # Accept only 200 (successful login page load) or 503 (temporary unavailable during startup)
+            if [ "$HTTP_CODE" = "200" ]; then
+                echo "✅ Mautic login page loaded successfully (HTTP 200)"
                 echo "🎉 Deployment validation successful!"
                 break
             elif [ "$HTTP_CODE" = "503" ]; then
                 echo "📋 Service temporarily unavailable (HTTP 503) - Mautic may still be starting up"
+                echo "⏳ Will retry in 45 seconds..."
             elif [ "$HTTP_CODE" = "000" ]; then
                 echo "📋 Connection failed - checking if containers and port are accessible..."
                 
@@ -257,14 +258,14 @@ runs:
                     " 2>/dev/null || echo "    Could not connect to server for debugging"
                 fi
             else
-                echo "📋 Unexpected HTTP response: $HTTP_CODE"
+                echo "📋 Unexpected HTTP response: $HTTP_CODE (expected 200 for login page)"
             fi
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
                 echo "⏳ Waiting 45 seconds before retry..."
                 sleep 45
             else
-                echo "❌ Mautic login page failed to respond after $MAX_ATTEMPTS attempts"
+                echo "❌ Mautic login page failed to return HTTP 200 after $MAX_ATTEMPTS attempts"
                 echo "� Final troubleshooting information:"
                 echo "  - VPS IP: ${VPS_IP}"
                 echo "  - Mautic URL: ${MAUTIC_URL}"
@@ -284,27 +285,6 @@ runs:
                     echo 'MySQL logs (last 10 lines):'
                     docker logs mautic_mysql --tail 10 2>/dev/null || echo 'No MySQL logs available'
                 " 2>/dev/null || echo "Could not connect for final debugging"
-                
-                exit 1
-            fi
-            
-            ATTEMPT=$((ATTEMPT + 1))
-        done
-                echo "❌ Mautic failed to respond after $MAX_ATTEMPTS attempts"
-                echo "🔍 Final troubleshooting information:"
-                echo "  - VPS IP: ${VPS_IP}"
-                echo "  - Base URL: ${BASE_URL}"
-                echo "  - Login URL: ${LOGIN_URL}"
-                echo "  - Base URL response: ${BASE_HTTP_CODE}"
-                echo "  - Login URL response: ${LOGIN_HTTP_CODE}"
-                
-                # Get container status for debugging
-                echo "🐳 Container status debugging:"
-                ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose ps" || echo "Could not get container status"
-                
-                # Check if Mautic is still initializing
-                echo "📋 Checking Mautic logs for initialization status:"
-                ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && docker compose logs --tail=20 mautic_web" || echo "Could not get Mautic logs"
                 
                 exit 1
             fi
