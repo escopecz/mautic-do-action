@@ -22,7 +22,7 @@ jobs:
           # Check required files exist
           test -f scripts/deploy.sh
           test -f scripts/setup-vps.sh
-          test -f scripts/setup-dc.sh
+          test -f scripts/setup.ts
           test -f templates/docker-compose.yml
           test -f templates/.env.template
           test -f templates/.mautic_env
@@ -34,10 +34,20 @@ jobs:
         run: |
           # Check shell script syntax
           bash -n scripts/deploy.sh
-          bash -n scripts/setup-vps.sh  
-          bash -n scripts/setup-dc.sh
+          bash -n scripts/setup-vps.sh
           
           echo "✅ Shell scripts are valid"
+          
+      - name: Validate TypeScript
+        run: |
+          # Install Deno for TypeScript validation
+          curl -fsSL https://deno.land/install.sh | sh
+          export PATH="$HOME/.deno/bin:$PATH"
+          
+          # Check TypeScript syntax
+          deno check scripts/setup.ts
+          
+          echo "✅ TypeScript files are valid"
           
       - name: Check file permissions
         run: |

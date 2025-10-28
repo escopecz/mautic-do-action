@@ -15,7 +15,7 @@ GitHub Action for deploying Mautic 6 to DigitalOcean VPS with automated SSL, mon
 ### Scripts
 - `scripts/deploy.sh` - Main deployment orchestration
 - `scripts/setup-vps.sh` - Initial VPS configuration 
-- `scripts/setup-dc.sh` - Docker Compose setup and Mautic installation
+- `scripts/setup.ts` - Main Mautic installation and configuration (TypeScript/Deno)
 
 ### Templates  
 - `templates/docker-compose.yml` - Container definitions (Mautic Apache + MySQL)
