@@ -383,8 +383,8 @@ if [ $COUNTER -ge $TIMEOUT ]; then
     
     echo "🔍 Checking if deployment actually completed..."
     
-    # Check for completion markers in log
-    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'deployment_status::success' /var/log/setup-dc.log 2>/dev/null"; then
+    # Check for completion markers in log - look for the actual success message
+    if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q '🎉 Mautic setup completed successfully\\|deployment_status::success' /var/log/setup-dc.log 2>/dev/null"; then
         echo "✅ Setup completed successfully (found success marker)"
         SETUP_EXIT_CODE=0
     else
@@ -467,6 +467,43 @@ if [ $SETUP_EXIT_CODE -ne 0 ]; then
     exit 1
 else
     echo "✅ Setup script completed successfully with exit code: ${SETUP_EXIT_CODE}"
+fi
+
+# Final validation - check if Mautic is actually accessible
+if [ $SETUP_EXIT_CODE -eq 0 ]; then
+    echo "🌐 Final validation: Testing Mautic accessibility..."
+    
+    if [ -n "$INPUT_DOMAIN" ]; then
+        TEST_URL="https://${INPUT_DOMAIN}/s/login"
+    else
+        TEST_URL="http://${VPS_IP}:${MAUTIC_PORT}/s/login"
+    fi
+    
+    echo "🔗 Testing URL: ${TEST_URL}"
+    
+    # Try HTTP request with timeout
+    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$TEST_URL" 2>/dev/null || echo "000")
+    
+    if [ "$HTTP_STATUS" = "200" ]; then
+        echo "✅ Mautic login page is accessible (HTTP $HTTP_STATUS)"
+    elif [ "$HTTP_STATUS" = "302" ] || [ "$HTTP_STATUS" = "301" ]; then
+        echo "✅ Mautic is accessible with redirect (HTTP $HTTP_STATUS)"
+    else
+        echo "⚠️ HTTP test returned: $HTTP_STATUS"
+        echo "🔍 This might be normal if containers are still starting up"
+        
+        # Give it one more try after a short wait
+        echo "⏳ Waiting 10 seconds and retrying..."
+        sleep 10
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 "$TEST_URL" 2>/dev/null || echo "000")
+        
+        if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ] || [ "$HTTP_STATUS" = "301" ]; then
+            echo "✅ Mautic is now accessible (HTTP $HTTP_STATUS)"
+        else
+            echo "⚠️ Mautic may not be fully ready yet (HTTP $HTTP_STATUS)"
+            echo "🔍 Check the URL manually: ${TEST_URL}"
+        fi
+    fi
 fi
 
 # Download setup log
