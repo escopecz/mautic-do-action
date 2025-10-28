@@ -221,7 +221,7 @@ MAUTIC_DB_USER=${this.config.mysqlUser}
 MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
 MAUTIC_DB_NAME=${this.config.mysqlDatabase}
 MAUTIC_DB_PORT=3306
-MAUTIC_TRUSTED_PROXIES=0.0.0.0/0
+MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
 MAUTIC_RUN_CRON_JOBS=true
 DOCKER_MAUTIC_ROLE=mautic_web
 
@@ -275,7 +275,7 @@ services:
       - MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
       - MAUTIC_DB_NAME=${this.config.mysqlDatabase}
       - MAUTIC_DB_PORT=3306
-      - MAUTIC_TRUSTED_PROXIES=0.0.0.0/0
+      - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
       - MAUTIC_RUN_CRON_JOBS=true
       - DOCKER_MAUTIC_ROLE=mautic_web
     depends_on:
@@ -400,20 +400,22 @@ volumes:
     
     try {
       // Check if mautic:install command is available
-      Logger.log('Checking available Mautic console commands...', '🔍');
-      const commandsList = await ProcessManager.run([
+      Logger.log('Checking mautic:install command availability...', '🔍');
+      const helpResult = await ProcessManager.run([
         'docker', 'exec', 'mautic_web', 
-        'php', '/var/www/html/bin/console', 'list', 'mautic'
+        'php', '/var/www/html/bin/console', 'mautic:install', '--help'
       ]);
-      Logger.log(`Available Mautic commands:\n${commandsList.output}`);
+      Logger.log(`Install command help:\n${helpResult.output}`);
       
-      // Run the proper mautic:install command
+      // Run the proper mautic:install command with site URL
       Logger.log('Running mautic:install command...', '🚀');
       
       // Construct the site URL
       const siteUrl = this.config.domainName 
         ? `https://${this.config.domainName}` 
         : `http://${this.config.ipAddress}:${this.config.port}`;
+      
+      Logger.log(`Installing with site URL: ${siteUrl}`, '🌐');
       
       const installResult = await ProcessManager.run([
         'docker', 'exec', 'mautic_web', 
