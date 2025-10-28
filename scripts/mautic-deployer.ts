@@ -399,28 +399,52 @@ volumes:
     Logger.info('🔧 Running Mautic installation...');
     
     try {
-      // Check if mautic:install command is available
-      Logger.log('Checking mautic:install command availability...', '🔍');
-      const helpResult = await ProcessManager.run([
-        'docker', 'exec', 'mautic_web', 
-        'php', '/var/www/html/bin/console', 'mautic:install', '--help'
-      ]);
-      Logger.log(`Install command help:\n${helpResult.output}`);
+      // First, let's ensure the container is ready and database is accessible
+      Logger.log('Pre-installation check: Testing database connection...', '🔍');
+      try {
+        const dbTest = await ProcessManager.run([
+          'docker', 'exec', 'mautic_web', 
+          'php', '-r', 
+          `try { $pdo = new PDO('mysql:host=mautic_db;dbname=${this.config.mysqlDatabase}', '${this.config.mysqlUser}', '${this.config.mysqlPassword}'); echo 'DB_CONNECTION_OK'; } catch(Exception $e) { echo 'DB_ERROR: ' . $e->getMessage(); }`
+        ]);
+        Logger.log(`Database test result: ${dbTest.output}`, '📊');
+      } catch (error) {
+        Logger.log(`Database test failed: ${error}`, '⚠️');
+      }
       
-      // Run the proper mautic:install command with site URL
-      Logger.log('Running mautic:install command...', '🚀');
+      // Check if mautic:install command help works
+      Logger.log('Testing mautic:install command availability...', '🔍');
+      try {
+        const helpResult = await ProcessManager.run([
+          'docker', 'exec', 'mautic_web', 
+          'timeout', '30',  // 30 second timeout
+          'php', '/var/www/html/bin/console', 'mautic:install', '--help'
+        ]);
+        Logger.log(`Install command available: ${helpResult.success ? 'YES' : 'NO'}`, '✅');
+        if (helpResult.output.includes('site_url')) {
+          Logger.log('Command signature confirmed', '✅');
+        }
+      } catch (error) {
+        Logger.log(`Install command test failed: ${error}`, '❌');
+        throw new Error('mautic:install command not available or hanging');
+      }
       
-      // Construct the site URL
+      // Run the actual installation with timeout
+      Logger.log('Starting Mautic installation with 5-minute timeout...', '🚀');
+      
       const siteUrl = this.config.domainName 
         ? `https://${this.config.domainName}` 
         : `http://${this.config.ipAddress}:${this.config.port}`;
       
-      Logger.log(`Installing with site URL: ${siteUrl}`, '🌐');
+      Logger.log(`Site URL: ${siteUrl}`, '🌐');
+      Logger.log('Database: mautic_db', '🗄️');
+      Logger.log(`Admin email: ${this.config.emailAddress}`, '👤');
       
       const installResult = await ProcessManager.run([
         'docker', 'exec', 'mautic_web', 
+        'timeout', '300',  // 5 minute timeout
         'php', '/var/www/html/bin/console', 'mautic:install',
-        siteUrl, // Required positional argument
+        siteUrl,
         '--db_host=mautic_db',
         '--db_name=' + this.config.mysqlDatabase,
         '--db_user=' + this.config.mysqlUser,
@@ -431,15 +455,19 @@ volumes:
         '--admin_email=' + this.config.emailAddress,
         '--admin_password=' + this.config.mauticPassword,
         '--force',
-        '--no-interaction'
+        '--no-interaction',
+        '-vvv'
       ]);
       
-      Logger.log(`Installation output:\n${installResult.output}`);
+      Logger.log(`Installation result (exit code: ${installResult.exitCode}):`, '📋');
+      Logger.log(installResult.output, '📄');
       
       if (installResult.success) {
         Logger.success('✅ Mautic installation completed successfully');
+      } else if (installResult.output.includes('timeout')) {
+        throw new Error('Installation timed out after 5 minutes');
       } else {
-        throw new Error(`Installation failed with output: ${installResult.output}`);
+        throw new Error(`Installation failed with exit code ${installResult.exitCode}: ${installResult.output}`);
       }
       
     } catch (error) {
