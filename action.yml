@@ -40,36 +40,13 @@ inputs:
     required: false
     default: 'mautic-vps'
   vps-size:
-    description: 'DigitalOcean droplet size'
+    description: 'DigitalOcean droplet size (s-1vcpu-1gb, s-1vcpu-2gb, s-2vcpu-2gb, s-2vcpu-4gb, s-4vcpu-8gb)'
     required: false
-    default: 's-1vcpu-1gb'
-    type: choice
-    options:
-      - 's-1vcpu-1gb'
-      - 's-1vcpu-2gb'
-      - 's-2vcpu-2gb'
-      - 's-2vcpu-4gb'
-      - 's-4vcpu-8gb'
-      - 's-8vcpu-16gb'
-      - 'c-2'
-      - 'c-4'
-      - 'c-8'
+    default: 's-2vcpu-2gb'
   vps-region:
     description: 'DigitalOcean region'
     required: false
     default: 'nyc1'
-    type: choice
-    options:
-      - 'nyc1'
-      - 'nyc3'
-      - 'ams3'
-      - 'fra1'
-      - 'lon1'
-      - 'sgp1'
-      - 'tor1'
-      - 'sfo3'
-      - 'blr1'
-      - 'syd1'
   
   # Mautic Packages
   themes:
@@ -78,14 +55,12 @@ inputs:
       vendor/theme-name:^1.0
       another-vendor/custom-theme:dev-main
     required: false
-    type: string
   plugins:
     description: |
       List of Mautic plugin packages from Packagist (one per line):
       vendor/plugin-name:^2.0
       another-vendor/custom-plugin:^1.5
     required: false
-    type: string
   
   # Database Configuration
   mysql-database:
