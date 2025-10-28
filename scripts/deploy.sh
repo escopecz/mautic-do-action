@@ -300,52 +300,84 @@ echo "⚙️  Running compiled setup binary on server..."
 echo "🔄 Starting setup script in background and monitoring progress..."
 
 # Start setup script in background with a completion marker
-ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && (./setup > /var/log/setup-dc.log 2>&1; echo \"SETUP_COMPLETED_\$?\" >> /var/log/setup-dc.log) &"
+echo "🚀 Executing SSH command to start setup..."
+echo "📝 Command: ssh root@${VPS_IP} 'cd /var/www && nohup ./setup > /var/log/setup-dc.log 2>&1 & echo BACKGROUND_STARTED'"
+echo "⏱️  Timeout: 60 seconds"
 
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to start setup script"
-    exit 1
+timeout 60 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && echo 'SSH_CONNECTED' && ls -la setup && echo 'STARTING_SETUP' && nohup ./setup > /var/log/setup-dc.log 2>&1 & echo 'BACKGROUND_STARTED'"
+
+SSH_START_RESULT=$?
+if [ $SSH_START_RESULT -ne 0 ]; then
+    if [ $SSH_START_RESULT -eq 124 ]; then
+        echo "⏰ SSH command to start setup timed out after 60 seconds"
+        echo "🔍 This suggests the setup binary is hanging on startup"
+        echo "📄 Checking if setup process actually started..."
+        # Check if process started anyway
+        SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f './setup' || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
+        if [ "$SETUP_RUNNING" != "NOT_RUNNING" ] && [ "$SETUP_RUNNING" != "SSH_FAILED" ]; then
+            echo "✅ Setup process is running (PID: $SETUP_RUNNING), continuing monitoring..."
+        else
+            echo "❌ Setup process not running, deployment failed"
+            exit 1
+        fi
+    else
+        echo "❌ Failed to start setup script (exit code: $SSH_START_RESULT)"
+        exit 1
+    fi
 fi
 
 echo "✅ Setup script started in background"
 
+# Immediately check if setup is producing output
+echo "🔍 Checking initial setup output..."
+sleep 5
+ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "ls -la /var/log/setup-dc.log 2>/dev/null && echo '--- LOG CONTENT ---' && head -20 /var/log/setup-dc.log 2>/dev/null || echo 'No log file yet'"
+
+# Also start a monitoring process that will write completion marker
+echo "🔍 Starting completion monitor..."
+timeout 60 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "nohup bash -c 'while pgrep -f \"./setup\" > /dev/null; do sleep 5; done; SETUP_PID=\$(pgrep -f \"./setup\" || echo); if [ -n \"\$SETUP_PID\" ]; then wait \$SETUP_PID; EXIT_CODE=\$?; else EXIT_CODE=0; fi; echo \"SETUP_COMPLETED_\$EXIT_CODE\" >> /var/log/setup-dc.log' > /dev/null 2>&1 &" &
+
 # Monitor progress with fewer SSH connections and better error handling
 echo "📊 Monitoring setup progress..."
-TIMEOUT=1200  # 20 minutes
+TIMEOUT=600  # 10 minutes for testing
 COUNTER=0
 SETUP_EXIT_CODE=255
 
 while [ $COUNTER -lt $TIMEOUT ]; do
-    # Check for completion marker with single SSH call and error handling
-    SSH_CHECK_RESULT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'SETUP_COMPLETED_' /var/log/setup-dc.log 2>/dev/null && echo 'COMPLETED' || echo 'RUNNING'" 2>/dev/null || echo "SSH_FAILED")
+    # Check if setup process is still running first
+    SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f './setup' || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
     
-    if [ "$SSH_CHECK_RESULT" = "COMPLETED" ]; then
-        # Setup completed, extract exit code with better parsing
-        SETUP_EXIT_CODE=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "grep 'SETUP_COMPLETED_' /var/log/setup-dc.log | tail -1" 2>/dev/null)
+    if [ "$SETUP_RUNNING" = "NOT_RUNNING" ]; then
+        echo "🏁 Setup process has completed (no longer running)"
+        # Check for completion marker with exit code
+        SSH_CHECK_RESULT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep 'SETUP_COMPLETED_' /var/log/setup-dc.log 2>/dev/null | tail -1" 2>/dev/null || echo "NO_MARKER")
         
-        # Extract the number after SETUP_COMPLETED_
-        if [[ "$SETUP_EXIT_CODE" =~ SETUP_COMPLETED_([0-9]+) ]]; then
+        if [[ "$SSH_CHECK_RESULT" =~ SETUP_COMPLETED_([0-9]+) ]]; then
             SETUP_EXIT_CODE="${BASH_REMATCH[1]}"
+            echo "✅ Setup completed with exit code: ${SETUP_EXIT_CODE}"
+            break
         else
-            SETUP_EXIT_CODE=255
+            # No marker found, check for success indicators in log
+            SUCCESS_CHECK=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'deployment_status::success\\|🎉' /var/log/setup-dc.log 2>/dev/null && echo 'SUCCESS' || echo 'UNKNOWN'" 2>/dev/null || echo "SSH_FAILED")
+            if [ "$SUCCESS_CHECK" = "SUCCESS" ]; then
+                SETUP_EXIT_CODE=0
+                echo "✅ Setup completed successfully (found success indicators)"
+                break
+            else
+                SETUP_EXIT_CODE=1
+                echo "⚠️ Setup process completed but exit code unknown, checking logs..."
+                break
+            fi
         fi
-        
-        # Ensure SETUP_EXIT_CODE is not empty and is numeric
-        if ! [[ "$SETUP_EXIT_CODE" =~ ^[0-9]+$ ]]; then
-            SETUP_EXIT_CODE=255
-        fi
-        
-        echo "✅ Setup script completed with exit code: ${SETUP_EXIT_CODE}"
-        break
-    elif [ "$SSH_CHECK_RESULT" = "SSH_FAILED" ]; then
+    elif [ "$SETUP_RUNNING" = "SSH_FAILED" ]; then
         echo "⚠️ SSH connection failed, retrying in 30s... (${COUNTER}s)"
     else
-        # Show periodic progress with error handling
+        # Process is still running, show progress
         if [ $((COUNTER % 60)) -eq 0 ]; then
-            echo "📄 Setup progress (${COUNTER}s):"
+            echo "📄 Setup progress (${COUNTER}s, PID: $SETUP_RUNNING):"
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -n 3 /var/log/setup-dc.log 2>/dev/null || echo 'Setup in progress...'"
         else
-            echo "⏳ Setup running... (${COUNTER}s)"
+            echo "⏳ Setup running... (${COUNTER}s, PID: $SETUP_RUNNING)"
         fi
     fi
     
@@ -356,7 +388,18 @@ done
 # Handle timeout
 if [ $COUNTER -ge $TIMEOUT ]; then
     echo "⏰ Setup script timeout after ${TIMEOUT} seconds"
-    echo "🔍 Checking if setup actually completed..."
+    echo "🔍 Attempting to kill stuck setup process..."
+    
+    # Try to kill the setup process
+    SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f './setup' || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
+    
+    if [ "$SETUP_RUNNING" != "NOT_RUNNING" ] && [ "$SETUP_RUNNING" != "SSH_FAILED" ]; then
+        echo "🔪 Killing setup process (PID: $SETUP_RUNNING)..."
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "kill -TERM $SETUP_RUNNING; sleep 5; kill -KILL $SETUP_RUNNING 2>/dev/null || true" 2>/dev/null || true
+        echo "✅ Setup process killed"
+    fi
+    
+    echo "🔍 Checking if deployment actually completed..."
     
     # Check for completion markers in log
     if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -q 'deployment_status::success' /var/log/setup-dc.log 2>/dev/null"; then
