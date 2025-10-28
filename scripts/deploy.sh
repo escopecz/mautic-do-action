@@ -328,6 +328,7 @@ echo "📊 Monitoring setup progress..."
 TIMEOUT=600  # 10 minutes for testing
 COUNTER=0
 SETUP_EXIT_CODE=255
+PREVIOUS_LOG_TAIL=""
 
 while [ $COUNTER -lt $TIMEOUT ]; do
     # Check if setup process is still running first
@@ -349,11 +350,27 @@ while [ $COUNTER -lt $TIMEOUT ]; do
                 SETUP_EXIT_CODE=0
                 echo "✅ Setup completed successfully (found success indicators)"
                 break
-            else
-                SETUP_EXIT_CODE=1
-                echo "⚠️ Setup process completed but exit code unknown, checking logs..."
-                break
             fi
+            
+            # Additional check: if we see the same timestamp for 2+ minutes, assume completion
+            if [ $COUNTER -ge 120 ]; then
+                CURRENT_LOG_TAIL=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -n 3 /var/log/setup-dc.log 2>/dev/null" 2>/dev/null || echo "LOG_CHECK_FAILED")
+                if [[ "$CURRENT_LOG_TAIL" == "$PREVIOUS_LOG_TAIL" ]] && [[ "$CURRENT_LOG_TAIL" != "LOG_CHECK_FAILED" ]]; then
+                    echo "⚠️ Setup appears completed (static log output for 2+ minutes)"
+                    # Do a final check for success indicators with more lenient grep
+                    FINAL_CHECK=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -E 'deployment_status::success|🎉|Access URL:.*login' /var/log/setup-dc.log 2>/dev/null | wc -l" 2>/dev/null || echo "0")
+                    if [ "$FINAL_CHECK" -gt 0 ]; then
+                        SETUP_EXIT_CODE=0
+                        echo "✅ Setup completed successfully (found completion indicators)"
+                        break
+                    fi
+                fi
+                PREVIOUS_LOG_TAIL="$CURRENT_LOG_TAIL"
+            fi
+            
+            SETUP_EXIT_CODE=1
+            echo "⚠️ Setup process completed but exit code unknown, checking logs..."
+            break
         fi
     elif [ "$SETUP_RUNNING" = "SSH_FAILED" ]; then
         echo "⚠️ SSH connection failed, retrying in 30s... (${COUNTER}s)"
