@@ -129,6 +129,9 @@ export class MauticDeployer {
         throw new Error('Containers failed to become healthy after update');
       }
       
+      // Warm up cache after update
+      await this.warmupCache();
+      
       Logger.success('Mautic update completed successfully');
       return true;
       
@@ -185,9 +188,17 @@ export class MauticDeployer {
       await DockerManager.waitForHealthy('mautic_db', 180);
       await DockerManager.waitForHealthy('mautic_web', 300);
       
+      // Run Mautic installation inside the container
+      await this.runMauticInstallation();
+      
+      // Warm up Mautic cache for better performance
+      await this.warmupCache();
+      
       // Install themes and plugins if specified
       if (this.config.mauticThemes || this.config.mauticPlugins) {
         await this.installThemesAndPlugins();
+        // Warm up cache again after installing packages
+        await this.warmupCache();
       }
       
       Logger.success('Mautic installation completed successfully');
@@ -378,6 +389,59 @@ volumes:
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Logger.error(`Failed to install plugin ${pluginUrl}: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Run Mautic installation inside the container
+   */
+  private async runMauticInstallation(): Promise<void> {
+    Logger.info('🔧 Running Mautic installation...');
+    
+    try {
+      // Run the Mautic installation command
+      await ProcessManager.run([
+        'docker', 'exec', 'mautic_web', 
+        'php', '/var/www/html/bin/console', 'mautic:install',
+        `--db_host=mautic_db`,
+        `--db_name=${this.config.mysqlDatabase}`,
+        `--db_user=${this.config.mysqlUser}`,
+        `--db_password=${this.config.mysqlPassword}`,
+        `--admin_email=${this.config.emailAddress}`,
+        `--admin_password=${this.config.mauticPassword}`,
+        '--force'
+      ]);
+      
+      Logger.success('✅ Mautic installation completed');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Mautic installation failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Warm up Mautic cache for better performance
+   */
+  private async warmupCache(): Promise<void> {
+    Logger.info('🔥 Warming up Mautic cache...');
+    
+    try {
+      // Clear existing cache first
+      await ProcessManager.run([
+        'docker', 'exec', 'mautic_web', 
+        'php', '/var/www/html/bin/console', 'cache:clear', '--env=prod'
+      ]);
+      
+      // Warm up cache
+      await ProcessManager.run([
+        'docker', 'exec', 'mautic_web', 
+        'php', '/var/www/html/bin/console', 'cache:warmup', '--env=prod'
+      ]);
+      
+      Logger.success('✅ Cache warmup completed');
+    } catch (error) {
+      // Cache warmup is not critical - log but don't fail deployment
+      Logger.error(`⚠️ Cache warmup failed (non-critical): ${error}`);
     }
   }
 }
