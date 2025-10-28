@@ -300,30 +300,12 @@ echo "⚙️  Running compiled setup binary on server..."
 echo "🔄 Starting setup script in background and monitoring progress..."
 
 # Start setup script in background with a completion marker
-echo "🚀 Executing SSH command to start setup..."
-echo "📝 Command: ssh root@${VPS_IP} 'cd /var/www && nohup ./setup > /var/log/setup-dc.log 2>&1 & echo BACKGROUND_STARTED'"
-echo "⏱️  Timeout: 60 seconds"
-
-timeout 60 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && echo 'SSH_CONNECTED' && ls -la setup && echo 'STARTING_SETUP' && nohup ./setup > /var/log/setup-dc.log 2>&1 & echo 'BACKGROUND_STARTED'"
+ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "cd /var/www && nohup ./setup > /var/log/setup-dc.log 2>&1 & echo 'BACKGROUND_STARTED'"
 
 SSH_START_RESULT=$?
 if [ $SSH_START_RESULT -ne 0 ]; then
-    if [ $SSH_START_RESULT -eq 124 ]; then
-        echo "⏰ SSH command to start setup timed out after 60 seconds"
-        echo "🔍 This suggests the setup binary is hanging on startup"
-        echo "📄 Checking if setup process actually started..."
-        # Check if process started anyway
-        SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f './setup' || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
-        if [ "$SETUP_RUNNING" != "NOT_RUNNING" ] && [ "$SETUP_RUNNING" != "SSH_FAILED" ]; then
-            echo "✅ Setup process is running (PID: $SETUP_RUNNING), continuing monitoring..."
-        else
-            echo "❌ Setup process not running, deployment failed"
-            exit 1
-        fi
-    else
-        echo "❌ Failed to start setup script (exit code: $SSH_START_RESULT)"
-        exit 1
-    fi
+    echo "❌ Failed to start setup script (exit code: $SSH_START_RESULT)"
+    exit 1
 fi
 
 echo "✅ Setup script started in background"
