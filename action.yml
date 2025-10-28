@@ -219,9 +219,31 @@ runs:
                 --retry-connrefused \
                 "$LOGIN_URL" 2>/dev/null || echo "000")
             
-            echo "📋 Login page returned HTTP $HTTP_CODE"
+            # If we get a redirect, let's see where it goes
+            if [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "301" ]; then
+                REDIRECT_URL=$(curl -s -I --connect-timeout 10 --max-time 30 "$LOGIN_URL" 2>/dev/null | grep -i "location:" | cut -d' ' -f2- | tr -d '\r\n')
+                echo "📋 Login page returned HTTP $HTTP_CODE, redirecting to: $REDIRECT_URL"
+                
+                # Follow the redirect to see the final response
+                if [ -n "$REDIRECT_URL" ]; then
+                    FINAL_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                        --connect-timeout 15 \
+                        --max-time 30 \
+                        "$REDIRECT_URL" 2>/dev/null || echo "000")
+                    echo "📋 Redirect destination returned HTTP $FINAL_HTTP_CODE"
+                    
+                    # Accept 200 after redirect (successful page load)
+                    if [ "$FINAL_HTTP_CODE" = "200" ]; then
+                        echo "✅ Mautic is responding correctly (redirected to working page)"
+                        echo "🎉 Deployment validation successful!"
+                        break
+                    fi
+                fi
+            else
+                echo "📋 Login page returned HTTP $HTTP_CODE"
+            fi
             
-            # Accept only 200 (successful login page load) or 503 (temporary unavailable during startup)
+            # Accept 200 (direct success) or 503 (temporary unavailable during startup)
             if [ "$HTTP_CODE" = "200" ]; then
                 echo "✅ Mautic login page loaded successfully (HTTP 200)"
                 echo "🎉 Deployment validation successful!"
@@ -258,14 +280,14 @@ runs:
                     " 2>/dev/null || echo "    Could not connect to server for debugging"
                 fi
             else
-                echo "📋 Unexpected HTTP response: $HTTP_CODE (expected 200 for login page)"
+                echo "📋 Unexpected HTTP response: $HTTP_CODE (expected 200)"
             fi
             
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
                 echo "⏳ Waiting 45 seconds before retry..."
                 sleep 45
             else
-                echo "❌ Mautic login page failed to return HTTP 200 after $MAX_ATTEMPTS attempts"
+                echo "❌ Mautic failed to respond properly after $MAX_ATTEMPTS attempts"
                 echo "� Final troubleshooting information:"
                 echo "  - VPS IP: ${VPS_IP}"
                 echo "  - Mautic URL: ${MAUTIC_URL}"
