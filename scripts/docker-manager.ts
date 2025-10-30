@@ -123,20 +123,31 @@ export class DockerManager {
         }
       }
       
-      if (result.success) {
-        Logger.success('Containers started successfully');
+      // Check if containers are actually running, regardless of exit code
+      Logger.log('Checking if containers are actually running...', '🔍');
+      const statusCheck = await ProcessManager.runShell('docker compose ps', { ignoreError: true });
+      
+      if (statusCheck.success) {
+        Logger.log('Current container status:', '📊');
+        Logger.log(statusCheck.output, '📋');
         
-        // Give containers a moment to initialize
-        Logger.log('Waiting 15 seconds for containers to initialize...', '⏳');
-        await new Promise(resolve => setTimeout(resolve, 15000));
+        // Check if any containers are running (even if not healthy yet)
+        const hasRunningContainers = statusCheck.output.includes('Up ') || statusCheck.output.includes('running');
         
-        // Check container status immediately
-        const statusResult = await ProcessManager.runShell('docker compose ps', { ignoreError: true });
-        if (statusResult.success) {
-          Logger.log('Container status after startup:', '📊');
-          Logger.log(statusResult.output, '📋');
+        if (hasRunningContainers) {
+          Logger.success('✅ Containers are running! (Health checks may still be in progress)');
+          
+          // Give containers a moment to initialize
+          Logger.log('Waiting 15 seconds for containers to initialize...', '⏳');
+          await new Promise(resolve => setTimeout(resolve, 15000));
+          
+          return true;
         }
-        
+      }
+      
+      // If we get here, containers truly failed to start
+      if (result.success) {
+        Logger.success('Docker compose command succeeded');
         return true;
       } else {
         Logger.error(`Failed to start containers: ${result.output}`);
