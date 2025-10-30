@@ -186,6 +186,12 @@ export class MauticDeployer {
       
       Logger.log('Containers started, checking initial status...', '📊');
       
+      // Quick container status check
+      const initialContainers = await DockerManager.listMauticContainers();
+      for (const container of initialContainers) {
+        Logger.log(`Container ${container.name}: ${container.status} (${container.image})`, '📦');
+      }
+      
       // Wait for services to be ready
       Logger.log('Waiting for database to be healthy (up to 5 minutes)...', '🗄️');
       await DockerManager.waitForHealthy('mautic_db', 300);

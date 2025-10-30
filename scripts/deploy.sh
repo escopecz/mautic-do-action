@@ -207,7 +207,6 @@ echo "🔒 Environment file secured with restricted permissions"
 # Copy templates to current directory for deployment
 cp "${ACTION_PATH}/templates/docker-compose.yml" .
 cp "${ACTION_PATH}/templates/.mautic_env.template" .
-cp "${ACTION_PATH}/templates/mysql.conf" .
 
 # Compile Deno setup script to binary
 echo "🔨 Compiling Deno TypeScript setup script to binary..."
@@ -233,7 +232,7 @@ fi
 echo "✅ Successfully compiled setup binary"
 
 echo "📁 Files prepared for deployment:"
-ls -la deploy.env docker-compose.yml .mautic_env.template mysql.conf build/setup
+ls -la deploy.env docker-compose.yml .mautic_env.template build/setup
 
 # Deploy to server
 echo "🚀 Deploying to server..."
@@ -279,7 +278,7 @@ echo "📤 Copying files to server..."
 # Ensure /var/www directory exists
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "mkdir -p /var/www"
 # Copy files
-scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy.env docker-compose.yml .mautic_env.template mysql.conf root@${VPS_IP}:/var/www/
+scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy.env docker-compose.yml .mautic_env.template root@${VPS_IP}:/var/www/
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa build/setup root@${VPS_IP}:/var/www/setup
 
 # Verify binary can execute
@@ -338,6 +337,10 @@ while [ "${COUNTER:-0}" -lt "${TIMEOUT:-600}" ]; do
     # Quick check: if log shows completion indicators, exit immediately
     if [ "${COUNTER:-0}" -ge 30 ]; then  # After 30 seconds, start checking for completion
         QUICK_SUCCESS_CHECK=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -c 'deployment_status::success\\|🎉.*Mautic setup completed\\|Access URL:.*login' /var/log/setup-dc.log 2>/dev/null || echo '0'" 2>/dev/null || echo "0")
+        # Ensure QUICK_SUCCESS_CHECK is numeric
+        case "$QUICK_SUCCESS_CHECK" in
+            ''|*[!0-9]*) QUICK_SUCCESS_CHECK=0 ;;
+        esac
         if [ "${QUICK_SUCCESS_CHECK:-0}" -gt 0 ]; then
             echo "✅ Setup completed successfully (found completion indicators in log)"
             SETUP_EXIT_CODE=0

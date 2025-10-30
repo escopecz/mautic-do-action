@@ -109,7 +109,21 @@ export class DockerManager {
         }
       }
       
-      Logger.log(`${containerName} status: ${info?.status || 'unknown'}, health: ${info?.health || 'unknown'}`, '⏳');
+      // Show detailed status every 60 seconds
+      if (i % 60 === 0 || i >= timeoutSeconds - 15) {
+        Logger.log(`${containerName} status: ${info?.status || 'unknown'}, health: ${info?.health || 'unknown'}`, '⏳');
+        
+        if (info?.status !== 'running') {
+          // Container is not running, get logs
+          const logs = await ProcessManager.runShell(`docker logs ${containerName} --tail 10`, { ignoreError: true });
+          if (logs.success && logs.output) {
+            Logger.log(`${containerName} logs:\n${logs.output}`, '📋');
+          }
+        }
+      } else {
+        Logger.log(`${containerName} status: ${info?.status || 'unknown'}, health: ${info?.health || 'unknown'}`, '⏳');
+      }
+      
       await new Promise(resolve => setTimeout(resolve, 15000));
     }
     
