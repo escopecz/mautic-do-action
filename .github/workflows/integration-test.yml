@@ -63,7 +63,7 @@ jobs:
           
           # First verify all containers are running
           echo "🐳 Verifying all Docker containers are running correctly..."
-          CONTAINER_STATUS=$(ssh -o StrictHostKeyChecking=no jan@$VPS_IP "cd /var/www && docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Health}}'")
+          CONTAINER_STATUS=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@$VPS_IP "cd /var/www && docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Health}}'")
           echo "$CONTAINER_STATUS"
           
           # Check mautic_db
@@ -71,7 +71,7 @@ jobs:
             echo "✅ mautic_db container is running and healthy"
           else
             echo "❌ mautic_db container is not healthy"
-            ssh -o StrictHostKeyChecking=no jan@$VPS_IP "docker logs mautic_db --tail 50"
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@$VPS_IP "docker logs mautic_db --tail 50"
             exit 1
           fi
           
@@ -80,7 +80,7 @@ jobs:
             echo "✅ mautic_web container is running and healthy"
           else
             echo "❌ mautic_web container is not healthy"
-            ssh -o StrictHostKeyChecking=no jan@$VPS_IP "docker logs mautic_web --tail 50"
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@$VPS_IP "docker logs mautic_web --tail 50"
             exit 1
           fi
           
@@ -89,7 +89,7 @@ jobs:
             echo "✅ mautic_cron container is running"
           else
             echo "❌ mautic_cron container is not running"
-            ssh -o StrictHostKeyChecking=no jan@$VPS_IP "docker logs mautic_cron --tail 50"
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@$VPS_IP "docker logs mautic_cron --tail 50"
             exit 1
           fi
           
