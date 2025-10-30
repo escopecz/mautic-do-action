@@ -53,9 +53,49 @@ jobs:
           echo "  VPS IP: '${{ steps.deploy.outputs.vps-ip }}'"
           echo "  Mautic URL: '${{ steps.deploy.outputs.mautic-url }}'"
           
+          # Setup SSH for container verification
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
           MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
           
-          # Validate URL before proceeding
+          # First verify all containers are running
+          echo "🐳 Verifying all Docker containers are running correctly..."
+          CONTAINER_STATUS=$(ssh -o StrictHostKeyChecking=no jan@$VPS_IP "cd /var/www && docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Health}}'")
+          echo "$CONTAINER_STATUS"
+          
+          # Check mautic_db
+          if echo "$CONTAINER_STATUS" | grep -q "mautic_db.*Up.*healthy"; then
+            echo "✅ mautic_db container is running and healthy"
+          else
+            echo "❌ mautic_db container is not healthy"
+            ssh -o StrictHostKeyChecking=no jan@$VPS_IP "docker logs mautic_db --tail 50"
+            exit 1
+          fi
+          
+          # Check mautic_web
+          if echo "$CONTAINER_STATUS" | grep -q "mautic_web.*Up.*healthy"; then
+            echo "✅ mautic_web container is running and healthy"
+          else
+            echo "❌ mautic_web container is not healthy"
+            ssh -o StrictHostKeyChecking=no jan@$VPS_IP "docker logs mautic_web --tail 50"
+            exit 1
+          fi
+          
+          # Check mautic_cron
+          if echo "$CONTAINER_STATUS" | grep -q "mautic_cron.*Up"; then
+            echo "✅ mautic_cron container is running"
+          else
+            echo "❌ mautic_cron container is not running"
+            ssh -o StrictHostKeyChecking=no jan@$VPS_IP "docker logs mautic_cron --tail 50"
+            exit 1
+          fi
+          
+          echo "🎉 All expected containers are running correctly!"
+          
+          # Validate URL before proceeding with accessibility tests
           if [ -z "$MAUTIC_URL" ]; then
             echo "❌ Error: MAUTIC_URL is empty!"
             echo "🔍 Deploy step outputs:"
