@@ -100,9 +100,9 @@ export class DockerManager {
       }
       Logger.log('Docker compose file is valid', '✅');
       
-      // Start containers
-      Logger.log('Starting containers...', '🚀');
-      const result = await ProcessManager.runShell('docker compose up -d', { ignoreError: true });
+      // Start containers with proper wait for health checks
+      Logger.log('Starting containers and waiting for health checks...', '🚀');
+      const result = await ProcessManager.runShell('docker compose up -d --wait --wait-timeout 300', { ignoreError: true });
       
       if (result.success) {
         Logger.success('Containers started successfully');
