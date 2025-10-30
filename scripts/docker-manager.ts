@@ -74,19 +74,62 @@ export class DockerManager {
     
     try {
       // Stop containers gracefully
-      await ProcessManager.runShell('docker compose down', { ignoreError: true });
+      Logger.log('Stopping existing containers...', '🛑');
+      const stopResult = await ProcessManager.runShell('docker compose down', { ignoreError: true });
+      if (stopResult.success) {
+        Logger.log('Containers stopped successfully', '✅');
+      } else {
+        Logger.log(`Stop result: ${stopResult.output}`, '⚠️');
+      }
       
       // Remove any stopped containers
-      await ProcessManager.runShell('docker compose rm -f', { ignoreError: true });
+      Logger.log('Cleaning up stopped containers...', '🧹');
+      const cleanResult = await ProcessManager.runShell('docker compose rm -f', { ignoreError: true });
+      if (cleanResult.success) {
+        Logger.log('Cleanup completed', '✅');
+      } else {
+        Logger.log(`Cleanup result: ${cleanResult.output}`, '⚠️');
+      }
+      
+      // Check docker-compose file exists and is valid
+      Logger.log('Validating docker-compose.yml...', '📋');
+      const validateResult = await ProcessManager.runShell('docker compose config', { ignoreError: true });
+      if (!validateResult.success) {
+        Logger.error(`Docker compose validation failed: ${validateResult.output}`);
+        return false;
+      }
+      Logger.log('Docker compose file is valid', '✅');
       
       // Start containers
+      Logger.log('Starting containers...', '🚀');
       const result = await ProcessManager.runShell('docker compose up -d', { ignoreError: true });
       
       if (result.success) {
-        Logger.success('Containers recreated successfully');
+        Logger.success('Containers started successfully');
+        
+        // Give containers a moment to initialize
+        Logger.log('Waiting 15 seconds for containers to initialize...', '⏳');
+        await new Promise(resolve => setTimeout(resolve, 15000));
+        
+        // Check container status immediately
+        const statusResult = await ProcessManager.runShell('docker compose ps', { ignoreError: true });
+        if (statusResult.success) {
+          Logger.log('Container status after startup:', '📊');
+          Logger.log(statusResult.output, '📋');
+        }
+        
         return true;
       } else {
-        Logger.error(`Failed to recreate containers: ${result.output}`);
+        Logger.error(`Failed to start containers: ${result.output}`);
+        
+        // Try to get more details about what went wrong
+        Logger.log('Getting detailed error information...', '🔍');
+        const logsResult = await ProcessManager.runShell('docker compose logs --tail 20', { ignoreError: true });
+        if (logsResult.success) {
+          Logger.log('Container logs:', '📄');
+          Logger.log(logsResult.output, '📋');
+        }
+        
         return false;
       }
     } catch (error: unknown) {

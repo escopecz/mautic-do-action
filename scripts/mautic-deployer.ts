@@ -181,6 +181,22 @@ export class MauticDeployer {
       const startSuccess = await DockerManager.recreateContainers();
       
       if (!startSuccess) {
+        // Debug: Check what docker-compose.yml looks like when it fails
+        Logger.log('Container startup failed - checking docker-compose.yml content...', '🔍');
+        const composeResult = await ProcessManager.runShell('head -50 docker-compose.yml', { ignoreError: true });
+        if (composeResult.success) {
+          Logger.log('docker-compose.yml content (first 50 lines):', '📄');
+          Logger.log(composeResult.output, '📋');
+        }
+        
+        // Check what containers exist
+        Logger.log('Checking Docker container status after failure...', '🐳');
+        const containerResult = await ProcessManager.runShell('docker ps -a', { ignoreError: true });
+        if (containerResult.success) {
+          Logger.log('All Docker containers after failure:', '📋');
+          Logger.log(containerResult.output, '📋');
+        }
+        
         throw new Error('Failed to start containers');
       }
       
