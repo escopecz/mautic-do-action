@@ -136,6 +136,12 @@ runs:
       id: deploy
       shell: bash
       run: |
+        # Debug: Show what environment variables are actually set
+        echo "🐛 DEBUG: Environment variables:"
+        echo "  INPUT_MAUTIC_VERSION='${INPUT_MAUTIC_VERSION}'"
+        echo "  mautic-version input='${{ inputs.mautic-version }}'"
+        echo ""
+        
         # Run the main deployment script
         ${{ github.action_path }}/scripts/deploy.sh
         
