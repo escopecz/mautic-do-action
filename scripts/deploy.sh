@@ -2,35 +2,7 @@
 
 set -e
 
-echo "🚀 Starting# Find the SSH key ID in DigitalOcean by fingerprint
-echo "🔍 Finding SSH key in DigitalOcean account..."
-echo "Looking for fingerprint: ${SSH_FINGERPRINT}"
-
-# Try to list SSH keys and find the matching one
-SSH_KEY_LIST=$(doctl compute ssh-key list --format ID,FingerPrint --no-header 2>/dev/null || doctl compute ssh-key list --format ID,Fingerprint --no-header 2>/dev/null || echo "")
-
-if [ -z "$SSH_KEY_LIST" ]; then
-    echo "❌ Error: Failed to list SSH keys from DigitalOcean"
-    exit 1
-fi
-
-SSH_KEY_ID=$(echo "$SSH_KEY_LIST" | grep "$SSH_FINGERPRINT" | awk '{print $1}')
-
-if [ -z "$SSH_KEY_ID" ]; then
-    echo "❌ Error: SSH key not found in DigitalOcean account"
-    echo "Available SSH keys in your DigitalOcean account:"
-    echo "$SSH_KEY_LIST"
-    echo ""
-    echo "Your generated fingerprint MD5: ${SSH_FINGERPRINT}"
-    echo "Your generated fingerprint SHA256: $(ssh-keygen -l -f ~/.ssh/id_rsa.pub | awk '{print $2}')"
-    echo ""
-    echo "Please add your SSH public key to DigitalOcean first:"
-    echo "Public Key:"
-    cat ~/.ssh/id_rsa.pub
-    echo ""
-    echo "Go to: DigitalOcean Control Panel → Settings → Security → SSH Keys"
-    exit 1
-fiment to DigitalOcean..."
+echo "🚀 Starting deployment to DigitalOcean..."
 
 # Set default port if not provided
 MAUTIC_PORT=${INPUT_MAUTIC_PORT:-8001}
@@ -53,7 +25,11 @@ chmod 600 ~/.ssh/id_rsa
 
 # Generate public key and fingerprint from private key
 echo "🔑 Generating SSH fingerprint from private key..."
-ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
+if ! ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub 2>/dev/null; then
+    echo "❌ Error: Failed to generate public key from private key"
+    echo "Please verify your SSH private key is valid"
+    exit 1
+fi
 
 # Generate MD5 fingerprint (DigitalOcean format)
 SSH_FINGERPRINT=$(ssh-keygen -l -f ~/.ssh/id_rsa.pub -E md5 | awk '{print $2}' | sed 's/MD5://')
@@ -67,13 +43,28 @@ fi
 echo "✅ SSH fingerprint generated MD5: ${SSH_FINGERPRINT}"
 
 # Find the SSH key ID in DigitalOcean by fingerprint
-echo "� Finding SSH key in DigitalOcean account..."
-SSH_KEY_ID=$(doctl compute ssh-key list --format ID,FingerPrint --no-header | grep "$SSH_FINGERPRINT" | awk '{print $1}')
+echo "🔍 Finding SSH key in DigitalOcean account..."
+echo "Looking for fingerprint: ${SSH_FINGERPRINT}"
+
+# Try to list SSH keys and find the matching one (handle different column headers)
+SSH_KEY_LIST=$(doctl compute ssh-key list --format ID,FingerPrint --no-header 2>/dev/null || doctl compute ssh-key list --format ID,Fingerprint --no-header 2>/dev/null || echo "")
+
+if [ -z "$SSH_KEY_LIST" ]; then
+    echo "❌ Error: Failed to list SSH keys from DigitalOcean"
+    exit 1
+fi
+
+SSH_KEY_ID=$(echo "$SSH_KEY_LIST" | grep "$SSH_FINGERPRINT" | awk '{print $1}')
 
 if [ -z "$SSH_KEY_ID" ]; then
     echo "❌ Error: SSH key not found in DigitalOcean account"
-    echo "Please add your SSH public key to DigitalOcean first:"
+    echo "Available SSH keys in your DigitalOcean account:"
+    echo "$SSH_KEY_LIST"
     echo ""
+    echo "Your generated fingerprint MD5: ${SSH_FINGERPRINT}"
+    echo "Your generated fingerprint SHA256: $(ssh-keygen -l -f ~/.ssh/id_rsa.pub | awk '{print $2}')"
+    echo ""
+    echo "Please add your SSH public key to DigitalOcean first:"
     echo "Public Key:"
     cat ~/.ssh/id_rsa.pub
     echo ""
