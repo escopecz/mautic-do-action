@@ -215,32 +215,39 @@ export class MauticDeployer {
     Logger.log('Creating environment configuration...', '⚙️');
     
     const envContent = `
-# Mautic Configuration
-MAUTIC_DB_HOST=mautic_db
+# Database Configuration
+MAUTIC_DB_HOST=mysql
 MAUTIC_DB_USER=${this.config.mysqlUser}
 MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
-MAUTIC_DB_NAME=${this.config.mysqlDatabase}
+MAUTIC_DB_DATABASE=${this.config.mysqlDatabase}
 MAUTIC_DB_PORT=3306
+
+# Mautic Configuration
 MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
 MAUTIC_RUN_CRON_JOBS=true
-DOCKER_MAUTIC_ROLE=mautic_web
-DOCKER_MAUTIC_LOAD_TEST_DATA=false
 
-# MySQL Configuration  
+# Admin Configuration
+MAUTIC_ADMIN_EMAIL=${this.config.emailAddress}
+MAUTIC_ADMIN_PASSWORD=${this.config.mauticPassword}
+MAUTIC_ADMIN_FIRSTNAME=Admin
+MAUTIC_ADMIN_LASTNAME=User
+
+# Docker Configuration - will be overridden per container
+DOCKER_MAUTIC_ROLE=mautic_web
+
+# Installation Configuration
+MAUTIC_DB_PREFIX=
+MAUTIC_INSTALL_FORCE=true
+
+# MySQL Configuration (for docker-compose environment variables)
 MYSQL_ROOT_PASSWORD=${this.config.mysqlRootPassword}
 MYSQL_DATABASE=${this.config.mysqlDatabase}
 MYSQL_USER=${this.config.mysqlUser}
 MYSQL_PASSWORD=${this.config.mysqlPassword}
 
 # Deployment Configuration
-IP_ADDRESS=${this.config.ipAddress}
+MAUTIC_VERSION=${this.config.mauticVersion.endsWith('-apache') ? this.config.mauticVersion : `${this.config.mauticVersion}-apache`}
 PORT=${this.config.port}
-DOMAIN_NAME=${this.config.domainName || ''}
-EMAIL_ADDRESS=${this.config.emailAddress}
-MAUTIC_VERSION=${this.config.mauticVersion}
-MAUTIC_PASSWORD=${this.config.mauticPassword}
-MAUTIC_THEMES=${this.config.mauticThemes || ''}
-MAUTIC_PLUGINS=${this.config.mauticPlugins || ''}
 `.trim();
     
     await Deno.writeTextFile('.mautic_env', envContent);
@@ -250,96 +257,23 @@ MAUTIC_PLUGINS=${this.config.mauticPlugins || ''}
   }
   
   private async createDockerCompose(): Promise<void> {
-    Logger.log('Creating docker-compose.yml...', '🐳');
+    Logger.log('Creating docker-compose.yml from template...', '🐳');
     
-    // Handle version that may already include -apache suffix
-    const baseVersion = this.config.mauticVersion.endsWith('-apache') 
-      ? this.config.mauticVersion 
-      : `${this.config.mauticVersion}-apache`;
-    
-    const composeContent = `
-version: '3.8'
-
-services:
-  mautic_web:
-    image: mautic/mautic:${baseVersion}
-    container_name: mautic_web
-    restart: unless-stopped
-    ports:
-      - "${this.config.port}:80"
-    volumes:
-      - mautic_data:/var/www/html
-      - mautic_config:/var/www/html/config
-      - ./logs:/var/www/html/var/logs
-      - mautic_media:/var/www/html/docroot/media
-    environment:
-      - MAUTIC_DB_HOST=mautic_db
-      - MAUTIC_DB_USER=${this.config.mysqlUser}
-      - MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
-      - MAUTIC_DB_DATABASE=${this.config.mysqlDatabase}
-      - MAUTIC_DB_PORT=3306
-      - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
-      - MAUTIC_RUN_CRON_JOBS=true
-      - DOCKER_MAUTIC_ROLE=mautic_web
-      - DOCKER_MAUTIC_LOAD_TEST_DATA=false
-    depends_on:
-      mautic_db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-
-  mautic_cron:
-    image: mautic/mautic:${baseVersion}
-    container_name: mautic_cron
-    restart: unless-stopped
-    volumes:
-      - mautic_data:/var/www/html
-      - ./logs:/var/www/html/var/logs
-    environment:
-      - MAUTIC_DB_HOST=mautic_db
-      - MAUTIC_DB_USER=${this.config.mysqlUser}
-      - MAUTIC_DB_PASSWORD=${this.config.mysqlPassword}
-      - MAUTIC_DB_DATABASE=${this.config.mysqlDatabase}
-      - MAUTIC_DB_PORT=3306
-      - MAUTIC_RUN_CRON_JOBS=true
-      - DOCKER_MAUTIC_ROLE=mautic_cron
-    depends_on:
-      mautic_db:
-        condition: service_healthy
-    command: ["sh", "-c", "while true; do php /var/www/html/bin/console mautic:segments:update && php /var/www/html/bin/console mautic:campaigns:update && php /var/www/html/bin/console mautic:campaigns:trigger && sleep 300; done"]
-
-  mautic_db:
-    image: mysql:8.0
-    container_name: mautic_db
-    restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=${this.config.mysqlRootPassword}
-      - MYSQL_DATABASE=${this.config.mysqlDatabase}
-      - MYSQL_USER=${this.config.mysqlUser}
-      - MYSQL_PASSWORD=${this.config.mysqlPassword}
-    volumes:
-      - ./mysql_data:/var/lib/mysql
-    command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb-file-per-table=1 --innodb-buffer-pool-size=1G --max_allowed_packet=512M
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${this.config.mysqlRootPassword}"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
-volumes:
-  mautic_data:
-  mautic_config:
-  mautic_media:
-  mysql_data:
-`.trim();
-    
-    await Deno.writeTextFile('docker-compose.yml', composeContent);
-    Logger.success('docker-compose.yml created');
+    try {
+      // Template should already be copied to current directory by deploy.sh
+      // If not, try to copy it from the action path
+      const templateExists = await ProcessManager.runShell('test -f docker-compose.yml', { ignoreError: true });
+      
+      if (!templateExists.success) {
+        Logger.log('Template not found in current directory, this should have been copied by deploy.sh', '⚠️');
+        throw new Error('docker-compose.yml template not found. It should be copied by deploy.sh.');
+      }
+      
+      Logger.success('docker-compose.yml template ready');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to prepare docker-compose.yml: ${errorMessage}`);
+    }
   }
   
   private async installThemesAndPlugins(): Promise<void> {

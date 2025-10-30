@@ -1,7 +1,17 @@
+version: '3.8'
+
+x-mautic-volumes:
+  &mautic-volumes
+  - mautic_data:/var/www/html
+  - mautic_config:/var/www/html/config
+  - ./logs:/var/www/html/var/logs
+  - mautic_media:/var/www/html/docroot/media/files
+  - mautic_media:/var/www/html/docroot/media/images
+
 services:
   db:
     image: mysql:8.0
-    container_name: mautic_mysql
+    container_name: mautic_db
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
@@ -22,7 +32,7 @@ services:
 
   mautic:
     image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
-    container_name: mautic_app
+    container_name: mautic_web
     depends_on:
       db:
         condition: service_healthy
@@ -34,16 +44,34 @@ services:
       - .mautic_env
     environment:
       - DOCKER_MAUTIC_ROLE=mautic_web
-    volumes:
-      - mautic_data:/var/www/html
-      - ./logs:/var/www/html/var/logs
+      - DOCKER_MAUTIC_LOAD_TEST_DATA=false
+      - DOCKER_MAUTIC_RUN_MIGRATIONS=true
+    volumes: *mautic-volumes
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail http://localhost || exit 1"]
-      start_period: 90s
+      test: ["CMD", "curl", "-f", "http://localhost"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 120s
+    networks:
+      - mautic
+
+  # Mautic cron jobs
+  mautic_cron:
+    image: mautic/mautic:${MAUTIC_VERSION:-6.0.5-apache}
+    container_name: mautic_cron
+    depends_on:
+      mautic:
+        condition: service_healthy
+    links:
+      - db:mysql
+    env_file:
+      - .mautic_env
+    environment:
+      - DOCKER_MAUTIC_ROLE=mautic_cron
+    volumes: *mautic-volumes
+    restart: unless-stopped
     networks:
       - mautic
 
@@ -60,9 +88,7 @@ services:
       - .mautic_env
     environment:
       - DOCKER_MAUTIC_ROLE=mautic_worker
-    volumes:
-      - mautic_data:/var/www/html
-      - ./logs:/var/www/html/var/logs
+    volumes: *mautic-volumes
     command: php /var/www/html/bin/console messenger:consume email async priority normal --limit=10 --memory-limit=512M
     restart: unless-stopped
     profiles:
@@ -72,6 +98,8 @@ services:
 
 volumes:
   mautic_data:
+  mautic_config:
+  mautic_media:
   mysql_data:
 
 networks:
