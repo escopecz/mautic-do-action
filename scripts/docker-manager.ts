@@ -102,7 +102,9 @@ export class DockerManager {
       
       // Start containers without wait to see if that's the issue
       Logger.log('Starting containers (without wait to debug)...', '🚀');
-      const result = await ProcessManager.runShell('docker compose up -d', { ignoreError: true });
+      
+      // Source deploy.env before running docker compose to make MAUTIC_VERSION available
+      const result = await ProcessManager.runShell('set -a && source deploy.env && docker compose up -d', { ignoreError: true });
       Logger.log(`Raw docker compose up result: success=${result.success}, output="${result.output}"`, '📝');
       
       // Regardless of success/failure, check what happened immediately
