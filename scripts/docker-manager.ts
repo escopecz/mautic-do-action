@@ -100,9 +100,10 @@ export class DockerManager {
       }
       Logger.log('Docker compose file is valid', '✅');
       
-      // Start containers with extended wait for health checks
-      Logger.log('Starting containers and waiting for health checks (up to 10 minutes)...', '🚀');
-      const result = await ProcessManager.runShell('docker compose up -d --wait --wait-timeout 600', { ignoreError: true });
+      // Start containers without wait to see if that's the issue
+      Logger.log('Starting containers (without wait to debug)...', '🚀');
+      const result = await ProcessManager.runShell('docker compose up -d', { ignoreError: true });
+      Logger.log(`Raw docker compose up result: success=${result.success}, output="${result.output}"`, '📝');
       
       // Regardless of success/failure, check what happened immediately
       Logger.log('Checking immediate container status after startup attempt...', '📊');
