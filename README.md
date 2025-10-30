@@ -147,8 +147,8 @@ jobs:
 | `domain` | Custom domain name | _(uses IP)_ | `mautic.example.com` |
 | `mautic-version` | Mautic Docker image version | `6.0.5-apache` | `6.0.4-apache` |
 | `mautic-port` | Port for Mautic application | `8001` | `8080` |
-| `themes` | Custom themes from GitHub/ZIP URLs (comma-separated) | _(none)_ | `https://github.com/user/theme/archive/main.zip` |
-| `plugins` | Custom plugins from GitHub/ZIP URLs (comma-separated) | _(none)_ | `https://github.com/user/plugin/archive/main.zip` |
+| `themes` | Custom themes from Packagist or GitHub/ZIP URLs | _(none)_ | `vendor/theme:^1.0` or `https://github.com/user/theme/archive/main.zip` |
+| `plugins` | Custom plugins from Packagist or GitHub/ZIP URLs | _(none)_ | `vendor/plugin:^2.0` or `https://github.com/user/plugin/archive/main.zip` |
 | `mysql-database` | MySQL database name | `mautic` | `mautic_prod` |
 | `mysql-user` | MySQL username | `mautic` | `mautic_user` |
 
@@ -247,6 +247,32 @@ The action will use `composer require` to install these packages into your Mauti
 - **GitHub Archives**: `https://github.com/user/repo/archive/refs/heads/main.zip`
 - **Tagged Releases**: `https://github.com/user/repo/archive/refs/tags/v1.0.0.zip`
 - **Direct ZIP Files**: `https://example.com/plugin.zip`
+- **Private Repositories**: `https://token@github.com/user/private-repo/archive/refs/heads/main.zip`
+
+### Accessing Private GitHub Repositories
+
+For private repositories, you can use GitHub Personal Access Tokens in the URL:
+
+```yaml
+plugins: |
+  https://ghp_your_token_here@github.com/yourcompany/private-plugin/archive/refs/heads/main.zip,
+  https://ghp_another_token@github.com/yourcompany/premium-plugin/archive/refs/tags/v1.0.0.zip
+
+themes: |
+  https://ghp_your_token_here@github.com/yourcompany/private-theme/archive/refs/heads/main.zip
+```
+
+**Setting up GitHub Personal Access Token:**
+1. Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Click "Generate new token (classic)"
+3. Select scopes: `repo` (for private repositories)
+4. Copy the token (starts with `ghp_`)
+5. Use format: `https://token@github.com/owner/repo/archive/refs/heads/branch.zip`
+
+**Security Notes:**
+- Store tokens in GitHub Secrets, not directly in workflow files
+- Use fine-grained tokens with minimal repository access
+- Consider using GitHub App installations for organization repositories
 
 **Advantages:**
 - ✅ **Faster Startup**: Plugins pre-installed during image build
