@@ -9,7 +9,8 @@ A GitHub Action to automatically deploy Mautic (open-source marketing automation
 - 🔒 **SSL/HTTPS support** - Automatic Let's Encrypt SSL certificates (when domain provided)
 - 🐳 **Docker-based** - Reliable, containerized deployment with Apache
 - 📧 **Email ready** - Pre-configured for email marketing campaigns
-- 🎨 **Custom themes/plugins** - Support for custom Mautic extensions
+- 🎨 **Custom themes/plugins** - Support for custom Mautic extensions via Composer or direct GitHub/ZIP installation
+- 🏗️ **Custom Docker Images** - Automatically builds custom images with your plugins pre-installed (build-time approach)
 - ⚙️ **Cron jobs** - Automated background tasks for optimal performance
 - 📊 **Basic monitoring** - DigitalOcean monitoring, container logging, and deployment artifacts
 
@@ -146,8 +147,8 @@ jobs:
 | `domain` | Custom domain name | _(uses IP)_ | `mautic.example.com` |
 | `mautic-version` | Mautic Docker image version | `6.0.5-apache` | `6.0.4-apache` |
 | `mautic-port` | Port for Mautic application | `8001` | `8080` |
-| `themes` | Packagist theme packages (newline-separated) | _(none)_ | `vendor/theme-name:^1.0` |
-| `plugins` | Packagist plugin packages (newline-separated) | _(none)_ | `vendor/plugin-name:^2.0` |
+| `themes` | Custom themes from GitHub/ZIP URLs (comma-separated) | _(none)_ | `https://github.com/user/theme/archive/main.zip` |
+| `plugins` | Custom plugins from GitHub/ZIP URLs (comma-separated) | _(none)_ | `https://github.com/user/plugin/archive/main.zip` |
 | `mysql-database` | MySQL database name | `mautic` | `mautic_prod` |
 | `mysql-user` | MySQL username | `mautic` | `mautic_user` |
 
@@ -178,9 +179,20 @@ jobs:
     vps-size: 's-4vcpu-8gb'
     domain: 'marketing.example.com'
     email: 'admin@example.com'
+    # ... other parameters
+```
+
+### With Custom Plugins from GitHub
+```yaml
+- uses: escopecz/mautic-deploy-action@v1
+  with:
+    vps-name: 'mautic-with-plugins'
+    email: 'admin@example.com'
+    plugins: |
+      https://github.com/youruser/StripeBundle/archive/refs/heads/6.x.zip,
+      https://github.com/company/AnalyticsPlugin/archive/refs/tags/v1.2.0.zip
     themes: |
-      vendor/custom-theme:^1.0
-      another-vendor/modern-theme:^2.0
+      https://github.com/youruser/CustomTheme/archive/refs/heads/main.zip
     # ... other parameters
 ```
 
@@ -210,6 +222,39 @@ plugins: |
 ```
 
 The action will use `composer require` to install these packages into your Mautic instance.
+
+### Custom Plugins from GitHub/ZIP Files (Build-Time Installation)
+
+**🎯 Recommended Approach** - For custom plugins hosted on GitHub or as ZIP files, the action can build a custom Docker image with your plugins pre-installed:
+
+```yaml
+- uses: escopecz/mautic-deploy-action@v1
+  with:
+    vps-name: 'mautic-custom'
+    email: 'admin@example.com'
+    # Custom plugins (comma-separated URLs)
+    plugins: |
+      https://github.com/youruser/StripeBundle/archive/refs/heads/6.x.zip,
+      https://github.com/company/CustomCRM/archive/refs/tags/v2.1.0.zip
+    
+    # Custom themes (comma-separated URLs)  
+    themes: |
+      https://github.com/youruser/CustomTheme/archive/refs/heads/main.zip
+    # ... other required parameters
+```
+
+**Supported URL Formats:**
+- **GitHub Archives**: `https://github.com/user/repo/archive/refs/heads/main.zip`
+- **Tagged Releases**: `https://github.com/user/repo/archive/refs/tags/v1.0.0.zip`
+- **Direct ZIP Files**: `https://example.com/plugin.zip`
+
+**Advantages:**
+- ✅ **Faster Startup**: Plugins pre-installed during image build
+- ✅ **More Reliable**: No network dependencies at runtime  
+- ✅ **Official Pattern**: Follows Mautic Docker team's recommended approach
+- ✅ **Zero Complexity**: No SSH keys or runtime installation needed
+
+**📖 Full Documentation**: [Custom Plugins Deployment Guide](examples/custom-plugins-deployment.md)
 
 ### Database Configuration
 

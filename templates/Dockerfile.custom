@@ -1,0 +1,13 @@
+ARG MAUTIC_VERSION=6.0.5-apache
+FROM mautic/mautic:${MAUTIC_VERSION}
+
+# Copy custom plugins if they exist
+COPY plugins/ /var/www/html/docroot/plugins/
+
+# Copy custom themes if they exist  
+COPY themes/ /var/www/html/docroot/themes/
+
+# Set correct ownership
+USER root
+RUN chown -R www-data:www-data /var/www/html/docroot/plugins/ /var/www/html/docroot/themes/
+USER www-data

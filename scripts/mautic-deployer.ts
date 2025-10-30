@@ -279,6 +279,168 @@ PORT=${this.config.port}
   private async installThemesAndPlugins(): Promise<void> {
     Logger.log('Installing themes and plugins...', '🎨');
     
+    // Check if we should use the custom Docker image approach or runtime installation
+    const useCustomImage = await this.shouldUseCustomImageApproach();
+    
+    if (useCustomImage) {
+      await this.buildCustomMauticImage();
+    } else {
+      // Fallback to runtime installation for backward compatibility
+      await this.installThemesAndPluginsRuntime();
+    }
+  }
+
+  private async shouldUseCustomImageApproach(): Promise<boolean> {
+    // Use custom image approach if we have plugins/themes to install
+    return !!(this.config.mauticThemes || this.config.mauticPlugins);
+  }
+
+  private async buildCustomMauticImage(): Promise<void> {
+    Logger.log('Building custom Mautic image with plugins/themes...', '🏗️');
+    
+    try {
+      // Create build directory
+      await ProcessManager.runShell('mkdir -p build/plugins build/themes');
+      
+      // Copy Dockerfile template
+      await ProcessManager.runShell('cp templates/Dockerfile.custom build/Dockerfile');
+      
+      // Download and prepare plugins/themes
+      await this.prepareCustomContent();
+      
+      // Build custom image
+      const imageName = `mautic-custom:${this.config.mauticVersion}`;
+      const baseVersion = this.config.mauticVersion.endsWith('-apache') 
+        ? this.config.mauticVersion 
+        : `${this.config.mauticVersion}-apache`;
+      
+      const buildCommand = `cd build && docker build --build-arg MAUTIC_VERSION=${baseVersion} -t ${imageName} .`;
+      const buildSuccess = await ProcessManager.runShell(buildCommand);
+      
+      if (!buildSuccess.success) {
+        throw new Error('Failed to build custom Mautic image');
+      }
+      
+      // Update docker-compose to use custom image
+      await this.updateComposeForCustomImage(imageName);
+      
+      Logger.success('Custom Mautic image built successfully');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Logger.error(`Failed to build custom image: ${errorMessage}`);
+      throw error;
+    }
+  }
+
+  private async prepareCustomContent(): Promise<void> {
+    // Install themes
+    if (this.config.mauticThemes) {
+      const themes = this.config.mauticThemes.split(',').map(t => t.trim());
+      for (const theme of themes) {
+        await this.downloadTheme(theme);
+      }
+    }
+    
+    // Install plugins
+    if (this.config.mauticPlugins) {
+      const plugins = this.config.mauticPlugins.split(',').map(p => p.trim());
+      for (const plugin of plugins) {
+        await this.downloadPlugin(plugin);
+      }
+    }
+  }
+
+  private async downloadTheme(themeUrl: string): Promise<void> {
+    Logger.log(`Downloading theme: ${themeUrl}`, '🎨');
+    
+    try {
+      const fileName = `theme-${Date.now()}.zip`;
+      const downloadPath = `build/themes/${fileName}`;
+      
+      // Download the theme ZIP file
+      const downloadResult = await ProcessManager.runShell(
+        `curl -L -o "${downloadPath}" "${themeUrl}"`,
+        { ignoreError: true }
+      );
+      
+      if (!downloadResult.success) {
+        throw new Error(`Failed to download theme: ${downloadResult.output}`);
+      }
+      
+      // Extract the ZIP file to themes directory
+      const extractResult = await ProcessManager.runShell(
+        `cd build/themes && unzip -o "${fileName}" && rm "${fileName}"`,
+        { ignoreError: true }
+      );
+      
+      if (!extractResult.success) {
+        throw new Error(`Failed to extract theme: ${extractResult.output}`);
+      }
+      
+      Logger.success(`Theme downloaded and extracted: ${themeUrl}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Logger.error(`Failed to download theme ${themeUrl}: ${errorMessage}`);
+      throw error;
+    }
+  }
+
+  private async downloadPlugin(pluginUrl: string): Promise<void> {
+    Logger.log(`Downloading plugin: ${pluginUrl}`, '🔌');
+    
+    try {
+      const fileName = `plugin-${Date.now()}.zip`;
+      const downloadPath = `build/plugins/${fileName}`;
+      
+      // Download the plugin ZIP file
+      const downloadResult = await ProcessManager.runShell(
+        `curl -L -o "${downloadPath}" "${pluginUrl}"`,
+        { ignoreError: true }
+      );
+      
+      if (!downloadResult.success) {
+        throw new Error(`Failed to download plugin: ${downloadResult.output}`);
+      }
+      
+      // Extract the ZIP file to plugins directory
+      const extractResult = await ProcessManager.runShell(
+        `cd build/plugins && unzip -o "${fileName}" && rm "${fileName}"`,
+        { ignoreError: true }
+      );
+      
+      if (!extractResult.success) {
+        throw new Error(`Failed to extract plugin: ${extractResult.output}`);
+      }
+      
+      Logger.success(`Plugin downloaded and extracted: ${pluginUrl}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Logger.error(`Failed to download plugin ${pluginUrl}: ${errorMessage}`);
+      throw error;
+    }
+  }
+
+  private async updateComposeForCustomImage(imageName: string): Promise<void> {
+    Logger.log('Updating docker-compose.yml to use custom image...', '📝');
+    
+    try {
+      const composeContent = await Deno.readTextFile('docker-compose.yml');
+      const updatedContent = composeContent.replace(
+        /image: mautic\/mautic:[^-]+-apache/g,
+        `image: ${imageName}`
+      );
+      
+      await Deno.writeTextFile('docker-compose.yml', updatedContent);
+      Logger.success('docker-compose.yml updated for custom image');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to update docker-compose.yml: ${errorMessage}`);
+    }
+  }
+
+  private async installThemesAndPluginsRuntime(): Promise<void> {
+    Logger.log('Using runtime installation for themes and plugins...', '⚙️');
+    
     // Install themes
     if (this.config.mauticThemes) {
       const themes = this.config.mauticThemes.split(',').map(t => t.trim());
