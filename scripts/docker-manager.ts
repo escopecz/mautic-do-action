@@ -109,16 +109,26 @@ export class DockerManager {
         }
       }
       
-      // Show detailed status every 60 seconds
-      if (i % 60 === 0 || i >= timeoutSeconds - 15) {
+      // Show detailed status every 30 seconds for MySQL debugging
+      if (containerName === 'mautic_db' && (i % 30 === 0 || i >= timeoutSeconds - 15)) {
         Logger.log(`${containerName} status: ${info?.status || 'unknown'}, health: ${info?.health || 'unknown'}`, '⏳');
         
-        if (info?.status !== 'running') {
-          // Container is not running, get logs
-          const logs = await ProcessManager.runShell(`docker logs ${containerName} --tail 10`, { ignoreError: true });
-          if (logs.success && logs.output) {
-            Logger.log(`${containerName} logs:\n${logs.output}`, '📋');
-          }
+        // Get MySQL container logs for debugging
+        const logs = await ProcessManager.runShell(`docker logs ${containerName} --tail 15`, { ignoreError: true });
+        if (logs.success && logs.output) {
+          Logger.log(`${containerName} recent logs:\n${logs.output}`, '📋');
+        }
+        
+        // Check if MySQL process is running inside container
+        const processCheck = await ProcessManager.runShell(`docker exec ${containerName} ps aux | grep mysql || echo "No MySQL process found"`, { ignoreError: true });
+        if (processCheck.success) {
+          Logger.log(`${containerName} processes: ${processCheck.output}`, '🔍');
+        }
+        
+        // Check MySQL data directory
+        const dataCheck = await ProcessManager.runShell(`docker exec ${containerName} ls -la /var/lib/mysql/ | head -10 || echo "Cannot access MySQL data"`, { ignoreError: true });
+        if (dataCheck.success) {
+          Logger.log(`${containerName} data directory: ${dataCheck.output}`, '�');
         }
       } else {
         Logger.log(`${containerName} status: ${info?.status || 'unknown'}, health: ${info?.health || 'unknown'}`, '⏳');

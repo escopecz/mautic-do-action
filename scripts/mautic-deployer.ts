@@ -192,6 +192,16 @@ export class MauticDeployer {
         Logger.log(`Container ${container.name}: ${container.status} (${container.image})`, '📦');
       }
       
+      // Immediate MySQL debugging - check right after startup
+      Logger.log('Checking MySQL container immediately after startup...', '🔍');
+      await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+      
+      const mysqlLogs = await ProcessManager.runShell('docker logs mautic_db --tail 20', { ignoreError: true });
+      if (mysqlLogs.success) {
+        Logger.log('MySQL startup logs:', '📋');
+        Logger.log(mysqlLogs.output, '📄');
+      }
+      
       // Wait for services to be ready
       Logger.log('Waiting for database to be healthy (up to 3 minutes)...', '🗄️');
       await DockerManager.waitForHealthy('mautic_db', 180);
