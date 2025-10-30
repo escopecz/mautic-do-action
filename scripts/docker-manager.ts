@@ -100,9 +100,9 @@ export class DockerManager {
       }
       Logger.log('Docker compose file is valid', '✅');
       
-      // Start containers with proper wait for health checks
-      Logger.log('Starting containers and waiting for health checks...', '🚀');
-      const result = await ProcessManager.runShell('docker compose up -d --wait --wait-timeout 300', { ignoreError: true });
+      // Start containers with extended wait for health checks
+      Logger.log('Starting containers and waiting for health checks (up to 10 minutes)...', '🚀');
+      const result = await ProcessManager.runShell('docker compose up -d --wait --wait-timeout 600', { ignoreError: true });
       
       if (result.success) {
         Logger.success('Containers started successfully');
@@ -122,12 +122,27 @@ export class DockerManager {
       } else {
         Logger.error(`Failed to start containers: ${result.output}`);
         
-        // Try to get more details about what went wrong
-        Logger.log('Getting detailed error information...', '🔍');
-        const logsResult = await ProcessManager.runShell('docker compose logs --tail 20', { ignoreError: true });
-        if (logsResult.success) {
-          Logger.log('Container logs:', '📄');
-          Logger.log(logsResult.output, '📋');
+        // Check which services are actually running vs healthy
+        Logger.log('Checking detailed service status...', '🔍');
+        const detailedStatus = await ProcessManager.runShell('docker compose ps -a', { ignoreError: true });
+        if (detailedStatus.success) {
+          Logger.log('Detailed container status:', '📊');
+          Logger.log(detailedStatus.output, '📋');
+        }
+        
+        // Check health status specifically
+        const healthStatus = await ProcessManager.runShell('docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Health}}"', { ignoreError: true });
+        if (healthStatus.success) {
+          Logger.log('Health check status:', '🏥');
+          Logger.log(healthStatus.output, '📋');
+        }
+        
+        // Get logs from all services to see what failed
+        Logger.log('Getting logs from all services...', '�');
+        const allLogs = await ProcessManager.runShell('docker compose logs --tail 30', { ignoreError: true });
+        if (allLogs.success) {
+          Logger.log('All service logs (last 30 lines each):', '�');
+          Logger.log(allLogs.output, '📋');
         }
         
         return false;
