@@ -104,6 +104,24 @@ export class DockerManager {
       Logger.log('Starting containers and waiting for health checks (up to 10 minutes)...', '🚀');
       const result = await ProcessManager.runShell('docker compose up -d --wait --wait-timeout 600', { ignoreError: true });
       
+      // Regardless of success/failure, check what happened immediately
+      Logger.log('Checking immediate container status after startup attempt...', '📊');
+      const immediateStatus = await ProcessManager.runShell('docker compose ps', { ignoreError: true });
+      if (immediateStatus.success) {
+        Logger.log('Immediate container status:', '📋');
+        Logger.log(immediateStatus.output, '📋');
+      }
+      
+      // If we see any restarting containers, get their logs immediately
+      if (immediateStatus.output.includes('Restarting')) {
+        Logger.log('Detected restarting containers - getting MySQL crash logs...', '🚨');
+        const mysqlCrashLogs = await ProcessManager.runShell('docker logs mautic_db --tail 100', { ignoreError: true });
+        if (mysqlCrashLogs.success) {
+          Logger.log('MySQL crash logs (last 100 lines):', '💥');
+          Logger.log(mysqlCrashLogs.output, '📋');
+        }
+      }
+      
       if (result.success) {
         Logger.success('Containers started successfully');
         
