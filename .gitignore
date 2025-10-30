@@ -1,0 +1,34 @@
+# Compiled Deno binaries
+build/
+
+# Node modules (if any)
+node_modules/
+
+# Environment files with secrets
+.env
+.env.local
+.env.production
+deploy.env
+
+# Logs
+*.log
+setup-dc.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp

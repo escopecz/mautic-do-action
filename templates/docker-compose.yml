@@ -20,13 +20,13 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
-    command: --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=128M --max-connections=50 --innodb-log-file-size=32M
+    command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      start_period: 120s
-      interval: 30s
-      timeout: 20s
-      retries: 15
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
+      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 5
     networks:
       - mautic
 
@@ -49,11 +49,11 @@ services:
     volumes: *mautic-volumes
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
-      interval: 45s
-      timeout: 15s
-      retries: 8
-      start_period: 180s
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     networks:
       - mautic
 

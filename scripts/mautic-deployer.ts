@@ -193,11 +193,11 @@ export class MauticDeployer {
       }
       
       // Wait for services to be ready
-      Logger.log('Waiting for database to be healthy (up to 5 minutes)...', '🗄️');
-      await DockerManager.waitForHealthy('mautic_db', 300);
+      Logger.log('Waiting for database to be healthy (up to 3 minutes)...', '🗄️');
+      await DockerManager.waitForHealthy('mautic_db', 180);
       
-      Logger.log('Waiting for Mautic web container to be healthy (up to 7 minutes)...', '🌐');
-      await DockerManager.waitForHealthy('mautic_web', 420);
+      Logger.log('Waiting for Mautic web container to be healthy (up to 5 minutes)...', '🌐');
+      await DockerManager.waitForHealthy('mautic_web', 300);
       
       // Run Mautic installation inside the container
       await this.runMauticInstallation();
