@@ -184,9 +184,14 @@ export class MauticDeployer {
         throw new Error('Failed to start containers');
       }
       
+      Logger.log('Containers started, checking initial status...', '📊');
+      
       // Wait for services to be ready
-      await DockerManager.waitForHealthy('mautic_db', 180);
-      await DockerManager.waitForHealthy('mautic_web', 300);
+      Logger.log('Waiting for database to be healthy (up to 5 minutes)...', '🗄️');
+      await DockerManager.waitForHealthy('mautic_db', 300);
+      
+      Logger.log('Waiting for Mautic web container to be healthy (up to 7 minutes)...', '🌐');
+      await DockerManager.waitForHealthy('mautic_web', 420);
       
       // Run Mautic installation inside the container
       await this.runMauticInstallation();

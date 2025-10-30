@@ -207,6 +207,7 @@ echo "🔒 Environment file secured with restricted permissions"
 # Copy templates to current directory for deployment
 cp "${ACTION_PATH}/templates/docker-compose.yml" .
 cp "${ACTION_PATH}/templates/.mautic_env.template" .
+cp "${ACTION_PATH}/templates/mysql.conf" .
 
 # Compile Deno setup script to binary
 echo "🔨 Compiling Deno TypeScript setup script to binary..."
@@ -232,7 +233,7 @@ fi
 echo "✅ Successfully compiled setup binary"
 
 echo "📁 Files prepared for deployment:"
-ls -la deploy.env docker-compose.yml .mautic_env.template build/setup
+ls -la deploy.env docker-compose.yml .mautic_env.template mysql.conf build/setup
 
 # Deploy to server
 echo "🚀 Deploying to server..."
@@ -278,7 +279,7 @@ echo "📤 Copying files to server..."
 # Ensure /var/www directory exists
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} "mkdir -p /var/www"
 # Copy files
-scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy.env docker-compose.yml .mautic_env.template root@${VPS_IP}:/var/www/
+scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deploy.env docker-compose.yml .mautic_env.template mysql.conf root@${VPS_IP}:/var/www/
 scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa build/setup root@${VPS_IP}:/var/www/setup
 
 # Verify binary can execute
@@ -330,14 +331,14 @@ COUNTER=0
 SETUP_EXIT_CODE=255
 PREVIOUS_LOG_TAIL=""
 
-while [ $COUNTER -lt $TIMEOUT ]; do
+while [ "${COUNTER:-0}" -lt "${TIMEOUT:-600}" ]; do
     # Check if setup process is still running - be more specific with process detection
     SETUP_RUNNING=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -i ~/.ssh/id_rsa root@${VPS_IP} "pgrep -f '^[^ ]*setup\$' | head -1 || echo 'NOT_RUNNING'" 2>/dev/null || echo "SSH_FAILED")
     
     # Quick check: if log shows completion indicators, exit immediately
-    if [ $COUNTER -ge 30 ]; then  # After 30 seconds, start checking for completion
+    if [ "${COUNTER:-0}" -ge 30 ]; then  # After 30 seconds, start checking for completion
         QUICK_SUCCESS_CHECK=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "grep -c 'deployment_status::success\\|🎉.*Mautic setup completed\\|Access URL:.*login' /var/log/setup-dc.log 2>/dev/null || echo '0'" 2>/dev/null || echo "0")
-        if [ "$QUICK_SUCCESS_CHECK" -gt 0 ]; then
+        if [ "${QUICK_SUCCESS_CHECK:-0}" -gt 0 ]; then
             echo "✅ Setup completed successfully (found completion indicators in log)"
             SETUP_EXIT_CODE=0
             break
@@ -363,7 +364,7 @@ while [ $COUNTER -lt $TIMEOUT ]; do
             fi
             
             # Additional check: if we see the same timestamp for 2+ minutes, assume completion
-            if [ $COUNTER -ge 120 ]; then
+            if [ "${COUNTER:-0}" -ge 120 ]; then
                 CURRENT_LOG_TAIL=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i ~/.ssh/id_rsa root@${VPS_IP} "tail -n 3 /var/log/setup-dc.log 2>/dev/null" 2>/dev/null || echo "LOG_CHECK_FAILED")
                 if [[ "$CURRENT_LOG_TAIL" == "$PREVIOUS_LOG_TAIL" ]] && [[ "$CURRENT_LOG_TAIL" != "LOG_CHECK_FAILED" ]]; then
                     echo "⚠️ Setup appears completed (static log output for 2+ minutes)"
@@ -407,11 +408,11 @@ while [ $COUNTER -lt $TIMEOUT ]; do
     fi
     
     sleep 30
-    COUNTER=$((COUNTER + 30))
+    COUNTER=$((${COUNTER:-0} + 30))
 done
 
 # Handle timeout
-if [ $COUNTER -ge $TIMEOUT ]; then
+if [ "${COUNTER:-0}" -ge "${TIMEOUT:-600}" ]; then
     echo "⏰ Setup script timeout after ${TIMEOUT} seconds"
     echo "🔍 Attempting to kill stuck setup process..."
     

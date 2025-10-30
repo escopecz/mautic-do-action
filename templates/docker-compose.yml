@@ -19,14 +19,15 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./mysql.conf:/etc/mysql/conf.d/custom.cnf:ro
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
-      start_period: 30s
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      start_period: 90s
+      interval: 20s
+      timeout: 15s
+      retries: 10
     networks:
       - mautic
 
@@ -49,11 +50,11 @@ services:
     volumes: *mautic-volumes
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+      test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
+      interval: 45s
+      timeout: 15s
+      retries: 8
+      start_period: 180s
     networks:
       - mautic
 
