@@ -174,6 +174,24 @@ export class MauticDeployer {
       // Generate environment file
       await this.createEnvironmentFile();
       
+      // Debug: Verify environment file was created correctly
+      Logger.log('Verifying environment file creation...', '🔍');
+      const envCheckResult = await ProcessManager.runShell('ls -la .mautic_env', { ignoreError: true });
+      if (envCheckResult.success) {
+        Logger.log('Environment file exists:', '✅');
+        Logger.log(envCheckResult.output, '📋');
+        
+        // Check the content (but mask sensitive values)
+        const envContentResult = await ProcessManager.runShell('head -10 .mautic_env | sed "s/=.*/=***MASKED***/"', { ignoreError: true });
+        if (envContentResult.success) {
+          Logger.log('Environment file structure (values masked):', '📄');
+          Logger.log(envContentResult.output, '📋');
+        }
+      } else {
+        Logger.error('Environment file was not created!');
+        Logger.log(envCheckResult.output, '❌');
+      }
+      
       // Create docker-compose.yml from template
       await this.createDockerCompose();
       

@@ -12,6 +12,8 @@ services:
   db:
     image: mysql:8.0
     container_name: mautic_db
+    env_file:
+      - .mautic_env
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
