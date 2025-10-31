@@ -51,15 +51,33 @@ inputs:
   # Mautic Packages
   themes:
     description: |
-      List of Mautic theme packages from Packagist (one per line):
+      List of Mautic theme packages from Packagist or GitHub (one per line).
+      
+      Packagist packages:
       vendor/theme-name:^1.0
       another-vendor/custom-theme:dev-main
+      
+      GitHub URLs (public repositories):
+      https://github.com/user/theme-repo/archive/refs/heads/main.zip
+      
+      GitHub URLs with custom directory and authentication:
+      https://github.com/company/private-theme/archive/main.zip?directory=MyCustomTheme&token=ghp_xxxxxxxxxxxxxxxxxxxx
+      https://github.com/vendor/premium-theme/archive/v2.1.0.zip?directory=PremiumTheme&token=ghp_yyyyyyyyyyyyyyyyyyyy
     required: false
   plugins:
     description: |
-      List of Mautic plugin packages from Packagist (one per line):
+      List of Mautic plugin packages from Packagist or GitHub (one per line).
+      
+      Packagist packages:
       vendor/plugin-name:^2.0
       another-vendor/custom-plugin:^1.5
+      
+      GitHub URLs (public repositories):
+      https://github.com/user/plugin-repo/archive/refs/heads/main.zip
+      
+      GitHub URLs with custom directory and authentication:
+      https://github.com/company/private-plugin/archive/main.zip?directory=CompanyPlugin&token=ghp_xxxxxxxxxxxxxxxxxxxx
+      https://github.com/vendor/premium-plugin/archive/v2.1.0.zip?directory=PremiumPlugin&token=ghp_yyyyyyyyyyyyyyyyyyyy
     required: false
   
   # Database Configuration

@@ -2,6 +2,12 @@
  * Type definitions for Mautic deployment system
  */
 
+export interface PackageConfig {
+  url: string;
+  directory?: string;
+  token?: string;
+}
+
 export interface DeploymentConfig {
   emailAddress: string;
   mauticPassword: string;
@@ -15,6 +21,7 @@ export interface DeploymentConfig {
   mysqlPassword: string;
   mysqlRootPassword: string;
   domainName?: string;
+  githubToken?: string;
 }
 
 export interface ContainerInfo {

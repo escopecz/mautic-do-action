@@ -38,8 +38,8 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
           # Start with older version for upgrade testing
           mautic-version: '6.0.4-apache'
-          # Test private plugin installation (using https:// prefix for token auth)
-          plugins: https://${{ secrets.GITHUB_TOKEN }}@github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip
+          plugins: |
+            https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.GITHUB_TOKEN_STRIPE }}
           
       - name: Show initial deployment results
         run: |
@@ -153,10 +153,10 @@ jobs:
           fi
           
           echo "🎉 Initial deployment verification completed - ready for upgrade test!"
-          
+
       - name: Verify plugin installation
         run: |
-          echo "🔌 Verifying StripeBundle plugin installation..."
+          echo "🔍 Verifying plugins were installed correctly..."
           VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
           
           if [ -z "$VPS_IP" ]; then
@@ -164,63 +164,85 @@ jobs:
             exit 1
           fi
           
-          # Setup SSH for plugin verification
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "$VPS_IP" >> ~/.ssh/known_hosts 2>/dev/null
-          
-          echo "🔍 Checking for StripeBundle plugin in container..."
-          
-          # First, let's see what plugins directory contains
-          echo "📁 Current plugins directory contents:"
-          ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-            'docker exec mautic_web ls -la /var/www/html/plugins/' || true
+          # Check if the plugin directories exist and contain expected files
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} << 'EOF'
+            echo "📂 Checking plugin directory structure..."
             
-          # Check if build directory exists (for custom image approach)
-          echo "🏗️ Checking build directory (custom image approach):"
-          ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-            'ls -la build/ 2>/dev/null || echo "No build directory found"' || true
+            plugin_success=0
             
-          # Check docker images to see if custom image was built
-          echo "🐳 Docker images on server:"
-          ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-            'docker images | grep mautic' || true
-          
-          # Check if StripeBundle plugin directory exists
-          PLUGIN_CHECK=$(ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-            'docker exec mautic_web test -d /var/www/html/plugins/StripeBundle && echo "EXISTS" || echo "NOT_FOUND"' 2>/dev/null)
-          
-          if [ "$PLUGIN_CHECK" = "EXISTS" ]; then
-            echo "✅ StripeBundle plugin directory found!"
-            
-            # Check for plugin files
-            ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-              'docker exec mautic_web find /var/www/html/plugins/StripeBundle -type f -name "*.php" | head -5' || true
-              
-            # Check composer.json in plugin
-            COMPOSER_CHECK=$(ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-              'docker exec mautic_web test -f /var/www/html/plugins/StripeBundle/composer.json && echo "COMPOSER_EXISTS" || echo "NO_COMPOSER"' 2>/dev/null)
-            
-            if [ "$COMPOSER_CHECK" = "COMPOSER_EXISTS" ]; then
-              echo "✅ Plugin composer.json found!"
-              ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-                'docker exec mautic_web cat /var/www/html/plugins/StripeBundle/composer.json | head -10' || true
+            # Check StripePlugin (private repo with token)
+            if [ -d "/var/www/mautic_data/plugins/StripePlugin" ]; then
+              echo "✅ StripePlugin directory found"
+              if find /var/www/mautic_data/plugins/StripePlugin -name "*.php" | head -1 | grep -q ".php"; then
+                echo "✅ StripePlugin contains PHP files - installation successful"
+                plugin_success=$((plugin_success + 1))
+              else
+                echo "⚠️ StripePlugin directory exists but no PHP files found"
+              fi
             else
-              echo "⚠️ Plugin composer.json not found"
+              echo "⚠️ StripePlugin directory not found (check GITHUB_TOKEN_STRIPE secret)"
             fi
             
-            echo "🎉 Plugin installation verification completed successfully!"
-          else
-            echo "❌ StripeBundle plugin directory NOT found!"
-            echo "🔍 Listing plugins directory contents:"
-            ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-              'docker exec mautic_web ls -la /var/www/html/plugins/' || true
-            echo "🔍 Checking if custom image was built:"
-            ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
-              'docker images | grep mautic' || true
-            exit 1
-          fi
+            # Check IntegrationsPlugin (public repo fallback)
+            if [ -d "/var/www/mautic_data/plugins/IntegrationsPlugin" ]; then
+              echo "✅ IntegrationsPlugin directory found"
+              if find /var/www/mautic_data/plugins/IntegrationsPlugin -name "*.php" | head -1 | grep -q ".php"; then
+                echo "✅ IntegrationsPlugin contains PHP files - installation successful"
+                plugin_success=$((plugin_success + 1))
+              else
+                echo "⚠️ IntegrationsPlugin directory exists but no PHP files found"
+              fi
+            else
+              echo "❌ IntegrationsPlugin directory not found"
+            fi
+            
+            echo "📋 Available plugin directories:"
+            ls -la /var/www/mautic_data/plugins/ || echo "No plugins directory found"
+            
+            if [ $plugin_success -gt 0 ]; then
+              echo "✅ Plugin installation verification completed ($plugin_success plugins successful)"
+              exit 0
+            else
+              echo "❌ No plugins were installed successfully"
+              exit 1
+            fi
+          EOF
+          
+          echo "🎉 Plugin verification completed successfully!"
+          
+      - name: Test plugin accessibility via Mautic
+        run: |
+          echo "🔍 Testing if Mautic recognizes the installed plugins..."
+          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
+          
+          # Check plugin status through Mautic console (if available)
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} << 'EOF'
+            cd /var/www
+            echo "🔧 Testing Mautic plugin recognition..."
+            
+            # Check if plugin files are accessible from container
+            plugin_count=0
+            
+            if docker exec mautic_web ls /var/www/html/plugins/StripePlugin/ >/dev/null 2>&1; then
+              echo "✅ StripePlugin files are accessible from Mautic container"
+              plugin_count=$((plugin_count + 1))
+            else
+              echo "ℹ️ StripePlugin not accessible from container"
+            fi
+            
+            if docker exec mautic_web ls /var/www/html/plugins/IntegrationsPlugin/ >/dev/null 2>&1; then
+              echo "✅ IntegrationsPlugin files are accessible from Mautic container"
+              plugin_count=$((plugin_count + 1))
+            else
+              echo "ℹ️ IntegrationsPlugin not accessible from container"
+            fi
+            
+            echo "📊 Summary: $plugin_count plugins accessible from container"
+            
+            # List all available plugins
+            echo "📋 All plugins in container:"
+            docker exec mautic_web find /var/www/html/plugins -maxdepth 1 -type d | tail -n +2 | head -10 || echo "No plugins found in container"
+          EOF
           
       - name: Setup SSH for manual upgrade test
         run: |

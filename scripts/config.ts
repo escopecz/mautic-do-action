@@ -43,7 +43,8 @@ export async function loadDeploymentConfig(): Promise<DeploymentConfig> {
       mysqlUser: config.MYSQL_USER,
       mysqlPassword: config.MYSQL_PASSWORD,
       mysqlRootPassword: config.MYSQL_ROOT_PASSWORD,
-      domainName: config.DOMAIN_NAME
+      domainName: config.DOMAIN_NAME,
+      githubToken: config.GITHUB_TOKEN
     };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

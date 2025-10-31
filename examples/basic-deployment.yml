@@ -17,20 +17,37 @@ jobs:
     
     steps:
       - name: Deploy Mautic
-        uses: escopecz/mautic-deploy-action@v1
+        uses: escopecz/mautic-do-action@main
         with:
+          # Required Configuration
+          digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          email: 'admin@example.com'
+          mautic-password: ${{ secrets.MAUTIC_PASSWORD }}
+          
+          # Optional Configuration
           vps-name: ${{ inputs.vps_name }}
-          vps-size: 's-2vcpu-2gb'
+          vps-size: 's-1vcpu-1gb'
           vps-region: 'nyc1'
           domain: ${{ inputs.domain }}
-          email: 'admin@example.com'
           mautic-version: '6.0.5-apache'
-          mautic-password: ${{ secrets.MAUTIC_PASSWORD }}
+          
+          # Simple Themes/Plugins Format (one per line)
+          themes: |
+            vendor/theme-name:^1.0
+            another-vendor/custom-theme:dev-main
+            https://github.com/public-user/theme-repo/archive/refs/heads/main.zip
+            https://github.com/company/private-theme/archive/v1.0.zip?directory=CompanyTheme&token=${{ secrets.GITHUB_TOKEN_COMPANY }}
+          
+          plugins: |
+            vendor/plugin-name:^2.0
+            another-vendor/custom-plugin:^1.5
+            https://github.com/public-user/plugin-repo/archive/refs/heads/main.zip
+            https://github.com/company/private-plugin/archive/v2.1.zip?directory=CompanyPlugin&token=${{ secrets.GITHUB_TOKEN_COMPANY }}
+          
+          # Database Configuration
           mysql-password: ${{ secrets.MYSQL_PASSWORD }}
           mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
-          do-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          ssh-fingerprint: ${{ secrets.SSH_FINGERPRINT }}
         
       - name: Show deployment results
         run: |

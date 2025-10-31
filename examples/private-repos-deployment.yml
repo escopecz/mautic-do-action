@@ -1,0 +1,53 @@
+name: Deploy Mautic with Private Packages (URL Parameters)
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: 'Domain name'
+        required: true
+        default: 'mautic.example.com'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy Mautic with Private Packages
+        uses: escopecz/mautic-do-action@main
+        with:
+          # Required Configuration
+          digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          email: 'admin@example.com'
+          mautic-password: ${{ secrets.MAUTIC_PASSWORD }}
+          
+          # VPS Configuration
+          domain: ${{ inputs.domain }}
+          vps-name: 'mautic-production'
+          vps-size: 's-1vcpu-1gb'
+          vps-region: 'nyc1'
+          
+          # Mixed Public and Private Themes with URL Parameters
+          themes: |
+            vendor/public-theme:^1.0
+            https://github.com/company/brand-theme/archive/v2.1.0.zip?directory=BrandTheme&token=${{ secrets.GITHUB_TOKEN_COMPANY }}
+            https://github.com/designer/premium-theme/archive/main.zip?directory=PremiumTheme&token=${{ secrets.GITHUB_TOKEN_DESIGNER }}
+          
+          # Mixed Public and Private Plugins with URL Parameters  
+          plugins: |
+            vendor/public-plugin:^2.0
+            another-vendor/marketplace-plugin:^1.5
+            https://github.com/company/crm-integration/archive/v3.2.1.zip?directory=CrmIntegration&token=${{ secrets.GITHUB_TOKEN_COMPANY }}
+            https://github.com/vendor/analytics-plugin/archive/main.zip?directory=AnalyticsPlugin&token=${{ secrets.GITHUB_TOKEN_VENDOR }}
+            https://github.com/public/free-plugin/archive/main.zip?directory=FreePlugin
+          
+          # Database Configuration
+          mysql-password: ${{ secrets.MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+        
+      - name: Show deployment results
+        run: |
+          echo "VPS IP: ${{ steps.deploy.outputs.vps-ip }}"
+          echo "Mautic URL: ${{ steps.deploy.outputs.mautic-url }}"
+          echo "Login with: admin@example.com / [MAUTIC_PASSWORD]"

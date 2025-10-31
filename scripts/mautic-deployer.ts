@@ -498,7 +498,7 @@ PORT=${this.config.port}
     
     // Install themes
     if (this.config.mauticThemes) {
-      const themes = this.config.mauticThemes.split(',').map(t => t.trim());
+      const themes = this.config.mauticThemes.split('\n').map(t => t.trim()).filter(Boolean);
       for (const theme of themes) {
         await this.installTheme(theme);
       }
@@ -506,7 +506,7 @@ PORT=${this.config.port}
     
     // Install plugins
     if (this.config.mauticPlugins) {
-      const plugins = this.config.mauticPlugins.split(',').map(p => p.trim());
+      const plugins = this.config.mauticPlugins.split('\n').map(p => p.trim()).filter(Boolean);
       for (const plugin of plugins) {
         await this.installPlugin(plugin);
       }
@@ -517,17 +517,54 @@ PORT=${this.config.port}
     Logger.log(`Installing theme: ${themeUrl}`, '🎨');
     
     try {
+      // Parse URL parameters if it's a GitHub URL
+      let cleanUrl = themeUrl;
+      let directory = '';
+      let token = '';
+      
+      if (themeUrl.startsWith('https://github.com/') && themeUrl.includes('?')) {
+        try {
+          const url = new URL(themeUrl);
+          cleanUrl = `${url.protocol}//${url.host}${url.pathname}`;
+          directory = url.searchParams.get('directory') || '';
+          token = url.searchParams.get('token') || '';
+        } catch (error) {
+          Logger.log(`Failed to parse URL parameters, using URL as-is: ${error}`, '⚠️');
+        }
+      }
+      
+      // Use URL-specific token if provided, otherwise fall back to global token
+      const authToken = token || this.config.githubToken;
+      
+      // Prepare wget command
+      let wgetCommand = '';
+      if (authToken && cleanUrl.includes('github.com')) {
+        wgetCommand = `wget -O theme.zip "${cleanUrl}" --header="Authorization: token ${authToken}" --timeout=30 --tries=2`;
+      } else {
+        wgetCommand = `wget -O theme.zip "${cleanUrl}" --timeout=30 --tries=2`;
+      }
+      
+      // Extract to specified directory or default behavior
+      let extractCommand = '';
+      if (directory) {
+        extractCommand = `mkdir -p "${directory}" && unzip -o theme.zip -d "${directory}" && rm theme.zip`;
+      } else {
+        extractCommand = `unzip -o theme.zip && rm theme.zip`;
+      }
+      
       await ProcessManager.runShell(`
         cd mautic_data/themes &&
-        wget -O theme.zip "${themeUrl}" &&
-        unzip -o theme.zip &&
-        rm theme.zip
+        ${wgetCommand} &&
+        ${extractCommand}
       `, { ignoreError: true });
       
-      Logger.success(`Theme installed: ${themeUrl}`);
+      const displayName = directory ? `${themeUrl} → ${directory}` : themeUrl;
+      Logger.success(`Theme installed: ${displayName}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      Logger.error(`Failed to install theme ${themeUrl}: ${errorMessage}`);
+      Logger.error(`❌ Failed to install theme ${themeUrl}: ${errorMessage}`);
+      // Re-throw the error to fail the build as requested
+      throw error;
     }
   }
   
@@ -535,17 +572,83 @@ PORT=${this.config.port}
     Logger.log(`Installing plugin: ${pluginUrl}`, '🔌');
     
     try {
-      await ProcessManager.runShell(`
+      // Parse URL parameters if it's a GitHub URL
+      let cleanUrl = pluginUrl;
+      let directory = '';
+      let token = '';
+      
+      if (pluginUrl.startsWith('https://github.com/') && pluginUrl.includes('?')) {
+        try {
+          const url = new URL(pluginUrl);
+          cleanUrl = `${url.protocol}//${url.host}${url.pathname}`;
+          directory = url.searchParams.get('directory') || '';
+          token = url.searchParams.get('token') || '';
+        } catch (error) {
+          Logger.log(`Failed to parse URL parameters, using URL as-is: ${error}`, '⚠️');
+        }
+      }
+      
+      // Use URL-specific token if provided, otherwise fall back to global token
+      const authToken = token || this.config.githubToken;
+      
+      // Prepare wget command
+      let wgetCommand = '';
+      if (authToken && cleanUrl.includes('github.com')) {
+        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --header="Authorization: token ${authToken}" --timeout=30 --tries=2`;
+      } else {
+        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --timeout=30 --tries=2`;
+      }
+      
+      // Download and validate the plugin
+      const downloadResult = await ProcessManager.runShell(`
         cd mautic_data/plugins &&
-        wget -O plugin.zip "${pluginUrl}" &&
-        unzip -o plugin.zip &&
-        rm plugin.zip
+        ${wgetCommand}
       `, { ignoreError: true });
       
-      Logger.success(`Plugin installed: ${pluginUrl}`);
+      if (!downloadResult.success) {
+        throw new Error(`Failed to download plugin: ${downloadResult.output}`);
+      }
+      
+      // Validate ZIP file before extraction
+      const validateResult = await ProcessManager.runShell(`
+        cd mautic_data/plugins &&
+        file plugin.zip | grep -q "Zip archive data" || (echo "Invalid ZIP file" && exit 1)
+      `, { ignoreError: true });
+      
+      if (!validateResult.success) {
+        // Clean up invalid file
+        await ProcessManager.runShell('cd mautic_data/plugins && rm -f plugin.zip', { ignoreError: true });
+        throw new Error('Downloaded file is not a valid ZIP archive');
+      }
+      
+      // Extract to specified directory or default behavior
+      let extractResult;
+      if (directory) {
+        extractResult = await ProcessManager.runShell(`
+          cd mautic_data/plugins &&
+          mkdir -p "${directory}" &&
+          unzip -o plugin.zip -d "${directory}" &&
+          rm plugin.zip
+        `, { ignoreError: true });
+      } else {
+        extractResult = await ProcessManager.runShell(`
+          cd mautic_data/plugins &&
+          unzip -o plugin.zip &&
+          rm plugin.zip
+        `, { ignoreError: true });
+      }
+      
+      if (!extractResult.success) {
+        throw new Error(`Failed to extract plugin: ${extractResult.output}`);
+      }
+      
+      const displayName = directory ? `${pluginUrl} → ${directory}` : pluginUrl;
+      Logger.success(`Plugin installed: ${displayName}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      Logger.error(`Failed to install plugin ${pluginUrl}: ${errorMessage}`);
+      Logger.error(`❌ Failed to install plugin ${pluginUrl}: ${errorMessage}`);
+      // Re-throw the error to fail the build as requested
+      throw error;
     }
   }
 
