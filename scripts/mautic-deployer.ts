@@ -455,6 +455,18 @@ PORT=${this.config.port}
           cleanUrl = `${url.protocol}//${url.host}${url.pathname}`;
           directory = url.searchParams.get('directory') || '';
           token = url.searchParams.get('token') || '';
+          
+          // Convert GitHub archive URLs to API endpoints for private repositories
+          if (token && cleanUrl.includes('/archive/')) {
+            // Convert https://github.com/owner/repo/archive/refs/heads/branch.zip
+            // to https://api.github.com/repos/owner/repo/zipball/branch
+            const match = cleanUrl.match(/https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/archive\/(?:refs\/heads\/)?(.+)\.zip/);
+            if (match) {
+              const [, owner, repo, branch] = match;
+              cleanUrl = `https://api.github.com/repos/${owner}/${repo}/zipball/${branch}`;
+              Logger.log(`Converted GitHub archive URL to API endpoint: ${cleanUrl}`, '🔄');
+            }
+          }
         } catch (error) {
           Logger.log(`Failed to parse URL parameters, using URL as-is: ${error}`, '⚠️');
         }
@@ -469,9 +481,13 @@ PORT=${this.config.port}
       // Prepare download command with authentication if needed
       let downloadCommand = '';
       if (authToken && cleanUrl.includes('github.com')) {
-        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --header="Authorization: token ${authToken}" --timeout=30 --tries=2`;
+        // Log sanitized URL for debugging (without token)
+        Logger.log(`Downloading from GitHub with authentication: ${cleanUrl}`, '🔍');
+        // Use GitHub API endpoint with proper redirect following
+        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v`;
       } else {
-        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --timeout=30 --tries=2`;
+        Logger.log(`Downloading from public URL: ${cleanUrl}`, '🔍');
+        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --timeout=30 --tries=2 -v`;
       }
       
       // Download the plugin ZIP file
@@ -566,6 +582,18 @@ PORT=${this.config.port}
           cleanUrl = `${url.protocol}//${url.host}${url.pathname}`;
           directory = url.searchParams.get('directory') || '';
           token = url.searchParams.get('token') || '';
+          
+          // Convert GitHub archive URLs to API endpoints for private repositories
+          if (token && cleanUrl.includes('/archive/')) {
+            // Convert https://github.com/owner/repo/archive/refs/heads/branch.zip
+            // to https://api.github.com/repos/owner/repo/zipball/branch
+            const match = cleanUrl.match(/https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/archive\/(?:refs\/heads\/)?(.+)\.zip/);
+            if (match) {
+              const [, owner, repo, branch] = match;
+              cleanUrl = `https://api.github.com/repos/${owner}/${repo}/zipball/${branch}`;
+              Logger.log(`Converted GitHub archive URL to API endpoint: ${cleanUrl}`, '🔄');
+            }
+          }
         } catch (error) {
           Logger.log(`Failed to parse URL parameters, using URL as-is: ${error}`, '⚠️');
         }
@@ -577,9 +605,12 @@ PORT=${this.config.port}
       // Prepare wget command
       let wgetCommand = '';
       if (authToken && cleanUrl.includes('github.com')) {
-        wgetCommand = `wget -O theme.zip "${cleanUrl}" --header="Authorization: token ${authToken}" --timeout=30 --tries=2`;
+        Logger.log(`Installing theme with GitHub authentication: ${cleanUrl}`, '🔍');
+        // Use GitHub API endpoint with proper redirect following
+        wgetCommand = `wget -O theme.zip "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v`;
       } else {
-        wgetCommand = `wget -O theme.zip "${cleanUrl}" --timeout=30 --tries=2`;
+        Logger.log(`Installing theme from public URL: ${cleanUrl}`, '🔍');
+        wgetCommand = `wget -O theme.zip "${cleanUrl}" --timeout=30 --tries=2 -v`;
       }
       
       // Extract to specified directory or default behavior
@@ -621,6 +652,18 @@ PORT=${this.config.port}
           cleanUrl = `${url.protocol}//${url.host}${url.pathname}`;
           directory = url.searchParams.get('directory') || '';
           token = url.searchParams.get('token') || '';
+          
+          // Convert GitHub archive URLs to API endpoints for private repositories
+          if (token && cleanUrl.includes('/archive/')) {
+            // Convert https://github.com/owner/repo/archive/refs/heads/branch.zip
+            // to https://api.github.com/repos/owner/repo/zipball/branch
+            const match = cleanUrl.match(/https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/archive\/(?:refs\/heads\/)?(.+)\.zip/);
+            if (match) {
+              const [, owner, repo, branch] = match;
+              cleanUrl = `https://api.github.com/repos/${owner}/${repo}/zipball/${branch}`;
+              Logger.log(`Converted GitHub archive URL to API endpoint: ${cleanUrl}`, '🔄');
+            }
+          }
         } catch (error) {
           Logger.log(`Failed to parse URL parameters, using URL as-is: ${error}`, '⚠️');
         }
@@ -632,22 +675,26 @@ PORT=${this.config.port}
       // Prepare wget command
       let wgetCommand = '';
       if (authToken && cleanUrl.includes('github.com')) {
-        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --header="Authorization: token ${authToken}" --timeout=30 --tries=2`;
+        Logger.log(`Installing plugin with GitHub authentication: ${cleanUrl}`, '🔍');
+        // Use GitHub API endpoint with proper redirect following
+        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v`;
       } else {
-        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --timeout=30 --tries=2`;
+        Logger.log(`Installing plugin from public URL: ${cleanUrl}`, '🔍');
+        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --timeout=30 --tries=2 -v`;
       }
       
       // Download and validate the plugin
+      Logger.log(`Attempting to download with command: ${wgetCommand.replace(/token=[^"'\s]*/g, 'token=***')}`, '🔍');
       const downloadResult = await ProcessManager.runShell(`
         cd mautic_data/plugins &&
         ${wgetCommand}
       `, { ignoreError: true });
-      
+
       if (!downloadResult.success) {
+        Logger.log(`❌ Download failed with exit code. wget output:`, '❌');
+        Logger.log(downloadResult.output, '📄');
         throw new Error(`Failed to download plugin: ${downloadResult.output}`);
-      }
-      
-      // Validate ZIP file before extraction
+      }      // Validate ZIP file before extraction
       const validateResult = await ProcessManager.runShell(`
         cd mautic_data/plugins &&
         file plugin.zip | grep -q "Zip archive data" || (echo "Invalid ZIP file" && exit 1)

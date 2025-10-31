@@ -180,6 +180,9 @@ MAUTIC_VERSION=${INPUT_MAUTIC_VERSION}
 MAUTIC_THEMES=${INPUT_THEMES}
 MAUTIC_PLUGINS=${INPUT_PLUGINS}
 
+# GitHub Token (extracted from plugin/theme URLs if present)
+GITHUB_TOKEN=$(echo "${INPUT_PLUGINS}${INPUT_THEMES}" | grep -o 'token=[^&]*' | head -1 | cut -d'=' -f2)
+
 # Database Configuration
 MYSQL_DATABASE=${INPUT_MYSQL_DATABASE}
 MYSQL_USER=${INPUT_MYSQL_USER}

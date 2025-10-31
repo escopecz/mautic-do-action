@@ -147,8 +147,8 @@ jobs:
 | `domain` | Custom domain name | _(uses IP)_ | `mautic.example.com` |
 | `mautic-version` | Mautic Docker image version | `6.0.5-apache` | `6.0.4-apache` |
 | `mautic-port` | Port for Mautic application | `8001` | `8080` |
-| `themes` | Custom themes from Packagist or GitHub/ZIP URLs | _(none)_ | `vendor/theme:^1.0` or `https://github.com/user/theme/archive/main.zip` |
-| `plugins` | Custom plugins from Packagist or GitHub/ZIP URLs | _(none)_ | `vendor/plugin:^2.0` or `https://github.com/user/plugin/archive/main.zip` |
+| `themes` | Custom themes (Packagist packages or GitHub ZIP URLs with optional parameters, one per line) | `""` |
+| `plugins` | Custom plugins (Packagist packages or GitHub ZIP URLs with optional parameters, one per line) | `""` |
 | `mysql-database` | MySQL database name | `mautic` | `mautic_prod` |
 | `mysql-user` | MySQL username | `mautic` | `mautic_user` |
 
@@ -160,7 +160,129 @@ jobs:
 | `mautic-url` | Full URL to access Mautic |
 | `deployment-log` | Path to deployment log file |
 
-## 📁 Examples
+## � Advanced Plugin & Theme Configuration
+
+This action supports flexible installation of custom plugins and themes from both public Packagist packages and private GitHub repositories.
+
+### Configuration Format
+
+#### Simple URLs (Public Repositories)
+
+```yaml
+themes: |
+  vendor/theme-name:^1.0
+  another-vendor/custom-theme:dev-main
+  https://github.com/user/theme-repo/archive/refs/heads/main.zip
+
+plugins: |
+  vendor/plugin-name:^2.0
+  another-vendor/custom-plugin:^1.5
+  https://github.com/user/plugin-repo/archive/refs/heads/main.zip
+```
+
+#### URLs with Parameters (Private Repositories & Custom Directories)
+
+For private repositories or custom directory names, use URL parameters:
+
+```yaml
+themes: |
+  https://github.com/company/private-theme/archive/main.zip?directory=CompanyTheme&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
+  https://github.com/vendor/premium-theme/archive/v2.1.0.zip?directory=PremiumTheme&token=${{ secrets.VENDOR_GITHUB_TOKEN }}
+  vendor/public-theme:^2.0
+
+plugins: |
+  https://github.com/company/private-plugin/archive/main.zip?directory=CompanyPlugin&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
+  https://github.com/vendor/custom-integration/archive/v1.5.2.zip?directory=CustomIntegration&token=${{ secrets.VENDOR_GITHUB_TOKEN }}
+  vendor/public-plugin:^1.0
+  https://github.com/public-repo/mautic-plugin/archive/refs/heads/main.zip?directory=PublicPlugin
+```
+
+### URL Parameters
+
+| Parameter | Description | Required | Example |
+|-----------|-------------|----------|---------|
+| `directory` | Custom directory name where the package will be extracted | No | `CompanyPlugin`, `CustomTheme` |
+| `token` | GitHub Personal Access Token for private repositories | For private repos | `${{ secrets.COMPANY_GITHUB_TOKEN }}` |
+
+### Example Configurations
+
+#### Basic GitHub URL (public repository)
+```yaml
+plugins: |
+  https://github.com/user/repo/archive/refs/heads/main.zip
+```
+
+#### With custom directory
+```yaml
+plugins: |
+  https://github.com/user/repo/archive/refs/heads/main.zip?directory=MyCustomName
+```
+
+#### With authentication token (private repository)
+```yaml
+plugins: |
+  https://github.com/company/private-repo/archive/main.zip?token=${{ secrets.COMPANY_GITHUB_TOKEN }}
+```
+
+#### With both directory and token
+```yaml
+plugins: |
+  https://github.com/company/private-repo/archive/main.zip?directory=CompanyPlugin&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
+```
+
+### GitHub Token Setup
+
+For private repositories, you'll need to create GitHub Personal Access Tokens:
+
+1. Go to [GitHub Settings > Personal Access Tokens](https://github.com/settings/tokens)
+2. Click "Generate new token" → "Fine-grained personal access token"
+3. Select the specific repositories you want to access
+4. Grant "Contents" read permission
+5. Copy the token and add it to your GitHub repository secrets
+
+**Important**: Secret names cannot start with `GITHUB_`. Use names like:
+- `COMPANY_GITHUB_TOKEN` (for company/* repos)
+- `VENDOR_GITHUB_TOKEN` (for vendor/* repos)  
+- `CHIMPINO_GITHUB_TOKEN` (for chimpino/* repos)
+
+### Example Secrets Configuration
+
+In your GitHub repository settings, create these secrets:
+
+```
+COMPANY_GITHUB_TOKEN = ghp_xxxxxxxxxxxxxxxxxxxx  # Access to company/* repos
+VENDOR_GITHUB_TOKEN = ghp_yyyyyyyyyyyyyyyyyyyy   # Access to vendor/* repos
+CHIMPINO_GITHUB_TOKEN = ghp_zzzzzzzzzzzzzzzzzz   # Access to chimpino/* repos
+```
+
+### Complete Workflow Example
+
+```yaml
+- uses: escopecz/mautic-deploy-action@v1
+  with:
+    vps-name: 'mautic-with-plugins'
+    email: 'admin@example.com'
+    plugins: |
+      https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
+      https://github.com/company/analytics-plugin/archive/v1.0.zip?directory=AnalyticsPlugin&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
+      vendor/public-plugin:^2.0
+    themes: |
+      https://github.com/company/premium-theme/archive/main.zip?directory=PremiumTheme&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
+      vendor/free-theme:^1.5
+    # ... other required parameters
+```
+
+### Benefits of URL Parameter Approach
+
+1. **Simplicity**: No YAML parsing - just standard URL parameters
+2. **Security**: Different tokens for different repositories with minimal permissions
+3. **Organization**: Clear directory naming for better plugin/theme management
+4. **Flexibility**: Mix public packages, private repositories, and Packagist packages
+5. **Maintenance**: Easy to update individual packages without affecting others
+6. **Intuitive**: Standard URL parameter format familiar to developers
+7. **Debugging**: Clear error messages show which specific package failed and why
+
+## �📁 Examples
 
 ### Basic Deployment
 ```yaml
@@ -182,17 +304,17 @@ jobs:
     # ... other parameters
 ```
 
-### With Custom Plugins from GitHub
+### With Custom Plugins and Themes
 ```yaml
 - uses: escopecz/mautic-deploy-action@v1
   with:
     vps-name: 'mautic-with-plugins'
     email: 'admin@example.com'
     plugins: |
-      https://github.com/youruser/StripeBundle/archive/refs/heads/6.x.zip,
-      https://github.com/company/AnalyticsPlugin/archive/refs/tags/v1.2.0.zip
+      https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
+      vendor/public-plugin:^2.0
     themes: |
-      https://github.com/youruser/CustomTheme/archive/refs/heads/main.zip
+      https://github.com/company/custom-theme/archive/main.zip?directory=CustomTheme&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
     # ... other parameters
 ```
 
