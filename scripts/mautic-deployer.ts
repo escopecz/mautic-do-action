@@ -346,8 +346,10 @@ PORT=${this.config.port}
   }
 
   private async shouldUseCustomImageApproach(): Promise<boolean> {
-    // Use custom image approach if we have plugins/themes to install
-    return !!(this.config.mauticThemes || this.config.mauticPlugins);
+    // Always use runtime installation for better memory efficiency
+    // Custom image building can cause memory issues on small VPS instances
+    Logger.log('Using runtime installation approach for plugins/themes', '⚙️');
+    return false;
   }
 
   private async buildCustomMauticImage(): Promise<void> {
@@ -548,23 +550,53 @@ PORT=${this.config.port}
   }
 
   private async installThemesAndPluginsRuntime(): Promise<void> {
-    Logger.log('Using runtime installation for themes and plugins...', '⚙️');
+    Logger.log('Using runtime installation for themes and plugins (memory-efficient approach)...', '⚙️');
     
     // Install themes
     if (this.config.mauticThemes) {
+      Logger.log('Installing themes via runtime approach...', '🎨');
       const themes = this.config.mauticThemes.split('\n').map(t => t.trim()).filter(Boolean);
+      let themeSuccessCount = 0;
+      let themeFailureCount = 0;
+      
       for (const theme of themes) {
-        await this.installTheme(theme);
+        try {
+          await this.installTheme(theme);
+          themeSuccessCount++;
+        } catch (error) {
+          themeFailureCount++;
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          Logger.log(`⚠️ Theme installation failed for ${theme}: ${errorMessage}`, '⚠️');
+          Logger.log('Continuing with remaining themes...', '➡️');
+        }
       }
+      
+      Logger.log(`Theme installation summary: ${themeSuccessCount} successful, ${themeFailureCount} failed`, '📊');
     }
     
     // Install plugins
     if (this.config.mauticPlugins) {
+      Logger.log('Installing plugins via runtime approach...', '🔌');
       const plugins = this.config.mauticPlugins.split('\n').map(p => p.trim()).filter(Boolean);
+      let pluginSuccessCount = 0;
+      let pluginFailureCount = 0;
+      
       for (const plugin of plugins) {
-        await this.installPlugin(plugin);
+        try {
+          await this.installPlugin(plugin);
+          pluginSuccessCount++;
+        } catch (error) {
+          pluginFailureCount++;
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          Logger.log(`⚠️ Plugin installation failed for ${plugin}: ${errorMessage}`, '⚠️');
+          Logger.log('Continuing with remaining plugins...', '➡️');
+        }
       }
+      
+      Logger.log(`Plugin installation summary: ${pluginSuccessCount} successful, ${pluginFailureCount} failed`, '📊');
     }
+    
+    Logger.success('Runtime installation of themes and plugins completed');
   }
   
   private async installTheme(themeUrl: string): Promise<void> {
@@ -694,7 +726,9 @@ PORT=${this.config.port}
         Logger.log(`❌ Download failed with exit code. wget output:`, '❌');
         Logger.log(downloadResult.output, '📄');
         throw new Error(`Failed to download plugin: ${downloadResult.output}`);
-      }      // Validate ZIP file before extraction
+      }
+      
+      // Validate ZIP file before extraction
       const validateResult = await ProcessManager.runShell(`
         cd mautic_data/plugins &&
         file plugin.zip | grep -q "Zip archive data" || (echo "Invalid ZIP file" && exit 1)
