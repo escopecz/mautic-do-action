@@ -38,6 +38,8 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
           # Start with older version for upgrade testing
           mautic-version: '6.0.4-apache'
+          # Test private plugin installation (using https:// prefix for token auth)
+          plugins: https://${{ secrets.GITHUB_TOKEN }}@github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip
           
       - name: Show initial deployment results
         run: |
@@ -151,6 +153,74 @@ jobs:
           fi
           
           echo "🎉 Initial deployment verification completed - ready for upgrade test!"
+          
+      - name: Verify plugin installation
+        run: |
+          echo "🔌 Verifying StripeBundle plugin installation..."
+          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
+          
+          if [ -z "$VPS_IP" ]; then
+            echo "❌ Error: VPS_IP is empty!"
+            exit 1
+          fi
+          
+          # Setup SSH for plugin verification
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$VPS_IP" >> ~/.ssh/known_hosts 2>/dev/null
+          
+          echo "🔍 Checking for StripeBundle plugin in container..."
+          
+          # First, let's see what plugins directory contains
+          echo "📁 Current plugins directory contents:"
+          ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+            'docker exec mautic_web ls -la /var/www/html/plugins/' || true
+            
+          # Check if build directory exists (for custom image approach)
+          echo "🏗️ Checking build directory (custom image approach):"
+          ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+            'ls -la build/ 2>/dev/null || echo "No build directory found"' || true
+            
+          # Check docker images to see if custom image was built
+          echo "🐳 Docker images on server:"
+          ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+            'docker images | grep mautic' || true
+          
+          # Check if StripeBundle plugin directory exists
+          PLUGIN_CHECK=$(ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+            'docker exec mautic_web test -d /var/www/html/plugins/StripeBundle && echo "EXISTS" || echo "NOT_FOUND"' 2>/dev/null)
+          
+          if [ "$PLUGIN_CHECK" = "EXISTS" ]; then
+            echo "✅ StripeBundle plugin directory found!"
+            
+            # Check for plugin files
+            ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+              'docker exec mautic_web find /var/www/html/plugins/StripeBundle -type f -name "*.php" | head -5' || true
+              
+            # Check composer.json in plugin
+            COMPOSER_CHECK=$(ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+              'docker exec mautic_web test -f /var/www/html/plugins/StripeBundle/composer.json && echo "COMPOSER_EXISTS" || echo "NO_COMPOSER"' 2>/dev/null)
+            
+            if [ "$COMPOSER_CHECK" = "COMPOSER_EXISTS" ]; then
+              echo "✅ Plugin composer.json found!"
+              ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+                'docker exec mautic_web cat /var/www/html/plugins/StripeBundle/composer.json | head -10' || true
+            else
+              echo "⚠️ Plugin composer.json not found"
+            fi
+            
+            echo "🎉 Plugin installation verification completed successfully!"
+          else
+            echo "❌ StripeBundle plugin directory NOT found!"
+            echo "🔍 Listing plugins directory contents:"
+            ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+              'docker exec mautic_web ls -la /var/www/html/plugins/' || true
+            echo "🔍 Checking if custom image was built:"
+            ssh -o StrictHostKeyChecking=no root@"$VPS_IP" \
+              'docker images | grep mautic' || true
+            exit 1
+          fi
           
       - name: Setup SSH for manual upgrade test
         run: |
