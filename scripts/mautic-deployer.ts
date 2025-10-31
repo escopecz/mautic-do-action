@@ -654,9 +654,8 @@ PORT=${this.config.port}
       }
       
       await ProcessManager.runShell(`
-        cd mautic_data/themes &&
-        ${wgetCommand} &&
-        ${extractCommand}
+        docker exec mautic_web mkdir -p /var/www/html/themes &&
+        docker exec mautic_web bash -c "cd /var/www/html/themes && ${wgetCommand} && ${extractCommand}"
       `, { ignoreError: true });
       
       const displayName = directory ? `${themeUrl} → ${directory}` : themeUrl;
@@ -718,8 +717,8 @@ PORT=${this.config.port}
       // Download and validate the plugin
       Logger.log(`Attempting to download with command: ${wgetCommand.replace(/token=[^"'\s]*/g, 'token=***')}`, '🔍');
       const downloadResult = await ProcessManager.runShell(`
-        cd mautic_data/plugins &&
-        ${wgetCommand}
+        docker exec mautic_web mkdir -p /var/www/html/plugins &&
+        docker exec mautic_web bash -c "cd /var/www/html/plugins && ${wgetCommand}"
       `, { ignoreError: true });
 
       if (!downloadResult.success) {
@@ -730,13 +729,12 @@ PORT=${this.config.port}
       
       // Validate ZIP file before extraction
       const validateResult = await ProcessManager.runShell(`
-        cd mautic_data/plugins &&
-        file plugin.zip | grep -q "Zip archive data" || (echo "Invalid ZIP file" && exit 1)
+        docker exec mautic_web bash -c "cd /var/www/html/plugins && file plugin.zip | grep -q 'Zip archive data' || (echo 'Invalid ZIP file' && exit 1)"
       `, { ignoreError: true });
       
       if (!validateResult.success) {
         // Clean up invalid file
-        await ProcessManager.runShell('cd mautic_data/plugins && rm -f plugin.zip', { ignoreError: true });
+        await ProcessManager.runShell('docker exec mautic_web bash -c "cd /var/www/html/plugins && rm -f plugin.zip"', { ignoreError: true });
         throw new Error('Downloaded file is not a valid ZIP archive');
       }
       
@@ -744,16 +742,11 @@ PORT=${this.config.port}
       let extractResult;
       if (directory) {
         extractResult = await ProcessManager.runShell(`
-          cd mautic_data/plugins &&
-          mkdir -p "${directory}" &&
-          unzip -o plugin.zip -d "${directory}" &&
-          rm plugin.zip
+          docker exec mautic_web bash -c "cd /var/www/html/plugins && mkdir -p '${directory}' && unzip -o plugin.zip -d '${directory}' && rm plugin.zip"
         `, { ignoreError: true });
       } else {
         extractResult = await ProcessManager.runShell(`
-          cd mautic_data/plugins &&
-          unzip -o plugin.zip &&
-          rm plugin.zip
+          docker exec mautic_web bash -c "cd /var/www/html/plugins && unzip -o plugin.zip && rm plugin.zip"
         `, { ignoreError: true });
       }
       

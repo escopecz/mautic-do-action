@@ -171,9 +171,9 @@ jobs:
             plugin_success=0
             
             # Check StripePlugin (private repo with token)
-            if [ -d "/var/www/mautic_data/plugins/StripePlugin" ]; then
+            if docker exec mautic_web ls /var/www/html/plugins/StripePlugin >/dev/null 2>&1; then
               echo "✅ StripePlugin directory found"
-              if find /var/www/mautic_data/plugins/StripePlugin -name "*.php" | head -1 | grep -q ".php"; then
+              if docker exec mautic_web find /var/www/html/plugins/StripePlugin -name "*.php" | head -1 | grep -q ".php"; then
                 echo "✅ StripePlugin contains PHP files - installation successful"
                 plugin_success=$((plugin_success + 1))
               else
@@ -183,21 +183,8 @@ jobs:
               echo "⚠️ StripePlugin directory not found (check CHIMPINO_GITHUB_TOKEN secret)"
             fi
             
-            # Check IntegrationsPlugin (public repo fallback)
-            if [ -d "/var/www/mautic_data/plugins/IntegrationsPlugin" ]; then
-              echo "✅ IntegrationsPlugin directory found"
-              if find /var/www/mautic_data/plugins/IntegrationsPlugin -name "*.php" | head -1 | grep -q ".php"; then
-                echo "✅ IntegrationsPlugin contains PHP files - installation successful"
-                plugin_success=$((plugin_success + 1))
-              else
-                echo "⚠️ IntegrationsPlugin directory exists but no PHP files found"
-              fi
-            else
-              echo "❌ IntegrationsPlugin directory not found"
-            fi
-            
             echo "📋 Available plugin directories:"
-            ls -la /var/www/mautic_data/plugins/ || echo "No plugins directory found"
+            docker exec mautic_web ls -la /var/www/html/plugins/ || echo "No plugins directory found"
             
             if [ $plugin_success -gt 0 ]; then
               echo "✅ Plugin installation verification completed ($plugin_success plugins successful)"
