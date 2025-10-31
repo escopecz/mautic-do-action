@@ -171,9 +171,9 @@ jobs:
             plugin_success=0
             
             # Check StripePlugin (private repo with token)
-            if docker exec mautic_web ls /var/www/html/plugins/StripePlugin >/dev/null 2>&1; then
+            if docker exec mautic_web ls /var/www/html/docroot/plugins/StripePlugin >/dev/null 2>&1; then
               echo "✅ StripePlugin directory found"
-              if docker exec mautic_web find /var/www/html/plugins/StripePlugin -name "*.php" | head -1 | grep -q ".php"; then
+              if docker exec mautic_web find /var/www/html/docroot/plugins/StripePlugin -name "*.php" | head -1 | grep -q ".php"; then
                 echo "✅ StripePlugin contains PHP files - installation successful"
                 plugin_success=$((plugin_success + 1))
               else
@@ -184,7 +184,7 @@ jobs:
             fi
             
             echo "📋 Available plugin directories:"
-            docker exec mautic_web ls -la /var/www/html/plugins/ || echo "No plugins directory found"
+            docker exec mautic_web ls -la /var/www/html/docroot/plugins/ || echo "No plugins directory found"
             
             if [ $plugin_success -gt 0 ]; then
               echo "✅ Plugin installation verification completed ($plugin_success plugins successful)"
@@ -228,7 +228,7 @@ jobs:
             
             # List all available plugins
             echo "📋 All plugins in container:"
-            docker exec mautic_web find /var/www/html/plugins -maxdepth 1 -type d | tail -n +2 | head -10 || echo "No plugins found in container"
+            docker exec mautic_web find /var/www/html/docroot/plugins -maxdepth 1 -type d | tail -n +2 | head -10 || echo "No plugins found in container"
           EOF
           
       - name: Setup SSH for manual upgrade test

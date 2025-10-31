@@ -654,8 +654,7 @@ PORT=${this.config.port}
       }
       
       await ProcessManager.runShell(`
-        docker exec mautic_web mkdir -p /var/www/html/themes &&
-        docker exec mautic_web bash -c "cd /var/www/html/themes && ${wgetCommand} && ${extractCommand}"
+        docker exec mautic_web bash -c "cd /var/www/html/docroot/themes && ${wgetCommand} && ${extractCommand}"
       `, { ignoreError: true });
       
       const displayName = directory ? `${themeUrl} → ${directory}` : themeUrl;
@@ -716,42 +715,69 @@ PORT=${this.config.port}
       
       // Download and validate the plugin
       Logger.log(`Attempting to download with command: ${wgetCommand.replace(/token=[^"'\s]*/g, 'token=***')}`, '🔍');
-      const downloadResult = await ProcessManager.runShell(`
-        docker exec mautic_web mkdir -p /var/www/html/plugins &&
-        docker exec mautic_web bash -c "cd /var/www/html/plugins && ${wgetCommand}"
-      `, { ignoreError: true });
+      
+      // Check if required tools are available in container
+      const toolsCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'which wget && which unzip && which file'`, { ignoreError: true });
+      if (!toolsCheck.success) {
+        Logger.log(`⚠️ Warning: Some required tools may be missing in container: ${toolsCheck.output}`, '⚠️');
+      } else {
+        Logger.log(`✅ Required tools available in container`, '✅');
+      }
+      
+      // Download the plugin using a more reliable approach
+      let downloadCommand;
+      if (authToken && cleanUrl.includes('github.com')) {
+        // For GitHub API, create a temporary script to avoid shell escaping issues
+        downloadCommand = `docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && wget -O plugin.zip "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v'`;
+      } else {
+        downloadCommand = `docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && wget -O plugin.zip "${cleanUrl}" --timeout=30 --tries=2 -v'`;
+      }
+      
+      const downloadResult = await ProcessManager.runShell(downloadCommand, { ignoreError: true });
 
       if (!downloadResult.success) {
-        Logger.log(`❌ Download failed with exit code. wget output:`, '❌');
+        Logger.log(`❌ Download failed with exit code. Full command output:`, '❌');
         Logger.log(downloadResult.output, '📄');
+        Logger.log(`Command that failed: ${downloadCommand.replace(/Bearer [^"'\s]*/g, 'Bearer ***')}`, '🔍');
         throw new Error(`Failed to download plugin: ${downloadResult.output}`);
+      } else {
+        Logger.log(`✅ Download completed successfully`, '✅');
       }
       
       // Validate ZIP file before extraction
-      const validateResult = await ProcessManager.runShell(`
-        docker exec mautic_web bash -c "cd /var/www/html/plugins && file plugin.zip | grep -q 'Zip archive data' || (echo 'Invalid ZIP file' && exit 1)"
-      `, { ignoreError: true });
+      const validateResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && file plugin.zip'`, { ignoreError: true });
       
       if (!validateResult.success) {
-        // Clean up invalid file
-        await ProcessManager.runShell('docker exec mautic_web bash -c "cd /var/www/html/plugins && rm -f plugin.zip"', { ignoreError: true });
-        throw new Error('Downloaded file is not a valid ZIP archive');
+        Logger.log(`⚠️ Could not validate ZIP file: ${validateResult.output}`, '⚠️');
+      } else {
+        Logger.log(`📁 ZIP file info: ${validateResult.output}`, '📁');
+        if (!validateResult.output.includes('Zip archive data')) {
+          // Clean up invalid file
+          await ProcessManager.runShell('docker exec mautic_web bash -c "cd /var/www/html/docroot/plugins && rm -f plugin.zip"', { ignoreError: true });
+          throw new Error('Downloaded file is not a valid ZIP archive');
+        }
       }
       
       // Extract to specified directory or default behavior
       let extractResult;
       if (directory) {
-        extractResult = await ProcessManager.runShell(`
-          docker exec mautic_web bash -c "cd /var/www/html/plugins && mkdir -p '${directory}' && unzip -o plugin.zip -d '${directory}' && rm plugin.zip"
-        `, { ignoreError: true });
+        extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p "${directory}" && unzip -o plugin.zip -d "${directory}" && rm plugin.zip'`, { ignoreError: true });
       } else {
-        extractResult = await ProcessManager.runShell(`
-          docker exec mautic_web bash -c "cd /var/www/html/plugins && unzip -o plugin.zip && rm plugin.zip"
-        `, { ignoreError: true });
+        extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && unzip -o plugin.zip && rm plugin.zip'`, { ignoreError: true });
       }
       
       if (!extractResult.success) {
+        Logger.log(`❌ Extraction failed: ${extractResult.output}`, '❌');
         throw new Error(`Failed to extract plugin: ${extractResult.output}`);
+      } else {
+        Logger.log(`✅ Extraction completed successfully`, '✅');
+        
+        // Verify what was installed
+        const verifyResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && ls -la'`, { ignoreError: true });
+        if (verifyResult.success) {
+          Logger.log(`📋 Plugin directory contents after installation:`, '📋');
+          Logger.log(verifyResult.output, '📄');
+        }
       }
       
       const displayName = directory ? `${pluginUrl} → ${directory}` : pluginUrl;
