@@ -39,7 +39,7 @@ jobs:
           # Start with older version for upgrade testing
           mautic-version: '6.0.4-apache'
           plugins: |
-            https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.GITHUB_TOKEN_STRIPE }}
+            https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
           
       - name: Show initial deployment results
         run: |
@@ -180,7 +180,7 @@ jobs:
                 echo "⚠️ StripePlugin directory exists but no PHP files found"
               fi
             else
-              echo "⚠️ StripePlugin directory not found (check GITHUB_TOKEN_STRIPE secret)"
+              echo "⚠️ StripePlugin directory not found (check CHIMPINO_GITHUB_TOKEN secret)"
             fi
             
             # Check IntegrationsPlugin (public repo fallback)
