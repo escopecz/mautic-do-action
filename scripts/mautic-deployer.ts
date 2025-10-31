@@ -444,30 +444,68 @@ PORT=${this.config.port}
     Logger.log(`Downloading plugin: ${pluginUrl}`, '🔌');
     
     try {
+      // Parse URL parameters if it's a GitHub URL
+      let cleanUrl = pluginUrl;
+      let directory = '';
+      let token = '';
+      
+      if (pluginUrl.startsWith('https://github.com/') && pluginUrl.includes('?')) {
+        try {
+          const url = new URL(pluginUrl);
+          cleanUrl = `${url.protocol}//${url.host}${url.pathname}`;
+          directory = url.searchParams.get('directory') || '';
+          token = url.searchParams.get('token') || '';
+        } catch (error) {
+          Logger.log(`Failed to parse URL parameters, using URL as-is: ${error}`, '⚠️');
+        }
+      }
+      
+      // Use URL-specific token if provided, otherwise fall back to global token
+      const authToken = token || this.config.githubToken;
+      
       const fileName = `plugin-${Date.now()}.zip`;
       const downloadPath = `build/plugins/${fileName}`;
       
+      // Prepare download command with authentication if needed
+      let downloadCommand = '';
+      if (authToken && cleanUrl.includes('github.com')) {
+        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --header="Authorization: token ${authToken}" --timeout=30 --tries=2`;
+      } else {
+        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --timeout=30 --tries=2`;
+      }
+      
       // Download the plugin ZIP file
-      const downloadResult = await ProcessManager.runShell(
-        `curl -L -o "${downloadPath}" "${pluginUrl}"`,
-        { ignoreError: true }
-      );
+      const downloadResult = await ProcessManager.runShell(downloadCommand, { ignoreError: true });
       
       if (!downloadResult.success) {
         throw new Error(`Failed to download plugin: ${downloadResult.output}`);
       }
       
+      // Validate ZIP file before extraction
+      const validateResult = await ProcessManager.runShell(`file "${downloadPath}" | grep -q "Zip archive data"`, { ignoreError: true });
+      
+      if (!validateResult.success) {
+        // Clean up invalid file
+        await ProcessManager.runShell(`rm -f "${downloadPath}"`, { ignoreError: true });
+        throw new Error('Downloaded file is not a valid ZIP archive');
+      }
+      
       // Extract the ZIP file to plugins directory
-      const extractResult = await ProcessManager.runShell(
-        `cd build/plugins && unzip -o "${fileName}" && rm "${fileName}"`,
-        { ignoreError: true }
-      );
+      let extractCommand = '';
+      if (directory) {
+        extractCommand = `cd build/plugins && mkdir -p "${directory}" && unzip -o "${fileName}" -d "${directory}" && rm "${fileName}"`;
+      } else {
+        extractCommand = `cd build/plugins && unzip -o "${fileName}" && rm "${fileName}"`;
+      }
+      
+      const extractResult = await ProcessManager.runShell(extractCommand, { ignoreError: true });
       
       if (!extractResult.success) {
         throw new Error(`Failed to extract plugin: ${extractResult.output}`);
       }
       
-      Logger.success(`Plugin downloaded and extracted: ${pluginUrl}`);
+      const displayName = directory ? `${pluginUrl} → ${directory}` : pluginUrl;
+      Logger.success(`Plugin downloaded and extracted: ${displayName}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Logger.error(`Failed to download plugin ${pluginUrl}: ${errorMessage}`);
