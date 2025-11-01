@@ -251,9 +251,21 @@ export class MauticDeployer {
       
       // Install themes and plugins if specified
       if (this.config.mauticThemes || this.config.mauticPlugins) {
+        Logger.log('=== STARTING THEMES AND PLUGINS INSTALLATION ===', '🎯');
+        Logger.log(`Themes configured: ${this.config.mauticThemes ? 'YES' : 'NO'}`, '🎨');
+        Logger.log(`Plugins configured: ${this.config.mauticPlugins ? 'YES' : 'NO'}`, '🔌');
+        
+        if (this.config.mauticPlugins) {
+          Logger.log(`Plugin URLs: ${this.config.mauticPlugins}`, '📋');
+        }
+        
         await this.installThemesAndPlugins();
+        
+        Logger.log('=== THEMES AND PLUGINS INSTALLATION COMPLETED ===', '🎯');
         // Clear cache after installing packages
         await this.clearCache('after installing themes/plugins');
+      } else {
+        Logger.log('No themes or plugins configured for installation', 'ℹ️');
       }
       
       Logger.success('Mautic installation completed successfully');
@@ -514,7 +526,7 @@ PORT=${this.config.port}
         // For GitHub API zipballs, we need to handle the nested directory structure
         if (cleanUrl.includes('api.github.com')) {
           // GitHub API creates a zip with a subdirectory named after the commit
-          extractCommand = `cd build/plugins && mkdir -p temp_extract "${directory}" && unzip -o "${fileName}" -d temp_extract && rm "${fileName}" && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract`;
+          extractCommand = `cd build/plugins && mkdir -p temp_extract "${directory}" && unzip -o "${fileName}" -d temp_extract && rm "${fileName}" && cd temp_extract && subdir=$(ls -1 | head -1) && if [ -d "$subdir" ]; then cp -r "$subdir"/* "../${directory}/"; fi && cd .. && rm -rf temp_extract`;
         } else {
           extractCommand = `cd build/plugins && mkdir -p "${directory}" && unzip -o "${fileName}" -d "${directory}" && rm "${fileName}"`;
         }
@@ -556,19 +568,23 @@ PORT=${this.config.port}
   }
 
   private async installThemesAndPluginsRuntime(): Promise<void> {
+    Logger.log('=== STARTING RUNTIME INSTALLATION ===', '⚙️');
     Logger.log('Using runtime installation for themes and plugins (memory-efficient approach)...', '⚙️');
     
     // Install themes
     if (this.config.mauticThemes) {
       Logger.log('Installing themes via runtime approach...', '🎨');
       const themes = this.config.mauticThemes.split('\n').map(t => t.trim()).filter(Boolean);
+      Logger.log(`Found ${themes.length} themes to install`, '📊');
       let themeSuccessCount = 0;
       let themeFailureCount = 0;
       
       for (const theme of themes) {
         try {
+          Logger.log(`Processing theme: ${theme}`, '🎨');
           await this.installTheme(theme);
           themeSuccessCount++;
+          Logger.log(`✅ Theme ${theme} installed successfully`, '✅');
         } catch (error) {
           themeFailureCount++;
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -579,18 +595,23 @@ PORT=${this.config.port}
       
       Logger.log(`Theme installation summary: ${themeSuccessCount} successful, ${themeFailureCount} failed`, '📊');
     }
-    
+
     // Install plugins
     if (this.config.mauticPlugins) {
+      Logger.log('=== STARTING PLUGIN INSTALLATION ===', '🔌');
       Logger.log('Installing plugins via runtime approach...', '🔌');
       const plugins = this.config.mauticPlugins.split('\n').map(p => p.trim()).filter(Boolean);
+      Logger.log(`Found ${plugins.length} plugins to install`, '📊');
       let pluginSuccessCount = 0;
       let pluginFailureCount = 0;
       
       for (const plugin of plugins) {
         try {
+          Logger.log(`Processing plugin: ${plugin}`, '🔌');
+          Logger.log(`Plugin URL: ${plugin}`, '🔗');
           await this.installPlugin(plugin);
           pluginSuccessCount++;
+          Logger.log(`✅ Plugin ${plugin} installed successfully`, '✅');
         } catch (error) {
           pluginFailureCount++;
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -602,6 +623,7 @@ PORT=${this.config.port}
       Logger.log(`Plugin installation summary: ${pluginSuccessCount} successful, ${pluginFailureCount} failed`, '📊');
     }
     
+    Logger.log('=== COMPLETED RUNTIME INSTALLATION ===', '✅');
     Logger.success('Runtime installation of themes and plugins completed');
   }
   
@@ -676,7 +698,7 @@ PORT=${this.config.port}
         // For GitHub API zipballs, we need to handle the nested directory structure
         if (cleanUrl.includes('api.github.com')) {
           // GitHub API creates a zip with a subdirectory named after the commit
-          extractCommand = `mkdir -p temp_extract "${directory}" && unzip -o theme.zip -d temp_extract && rm theme.zip && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract`;
+          extractCommand = `mkdir -p temp_extract "${directory}" && unzip -o theme.zip -d temp_extract && rm theme.zip && cd temp_extract && subdir=$(ls -1 | head -1) && if [ -d "$subdir" ]; then cp -r "$subdir"/* "../${directory}/"; fi && cd .. && rm -rf temp_extract`;
         } else {
           extractCommand = `mkdir -p "${directory}" && unzip -o theme.zip -d "${directory}" && rm theme.zip`;
         }
@@ -835,19 +857,61 @@ PORT=${this.config.port}
           }
           
           // Extract to temp, find the subdirectory, then move contents to target directory
-          extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p temp_extract "${directory}" && unzip -o plugin.zip -d temp_extract && rm plugin.zip && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract'`, { ignoreError: true });
+          const extractCmd = `cd /var/www/html/docroot/plugins && \\
+echo "=== STARTING EXTRACTION PROCESS ===" && \\
+mkdir -p temp_extract "${directory}" && \\
+echo "Created directories temp_extract and ${directory}" && \\
+unzip -o plugin.zip -d temp_extract && \\
+echo "Extracted plugin.zip to temp_extract" && \\
+rm plugin.zip && \\
+echo "Removed plugin.zip" && \\
+echo "Contents of temp_extract:" && \\
+ls -la temp_extract && \\
+cd temp_extract && \\
+subdir=\$(ls -1 | head -1) && \\
+echo "Found subdirectory: \$subdir" && \\
+if [ -d "\$subdir" ]; then \\
+  echo "Subdirectory \$subdir exists, checking its contents:" && \\
+  ls -la "\$subdir" && \\
+  echo "Copying ALL contents from \$subdir to ../${directory}/" && \\
+  (cd "\$subdir" && cp -r . "../../${directory}/") && \\
+  echo "Copy operation completed" && \\
+  echo "Checking target directory after copy:" && \\
+  ls -la "../${directory}/" && \\
+  echo "File count in target:" && \\
+  find "../${directory}/" -type f | wc -l; \\
+else \\
+  echo "ERROR: No subdirectory found or not a directory"; \\
+  echo "Available items in temp_extract:"; \\
+  ls -la; \\
+fi && \\
+cd .. && \\
+echo "Cleaning up temp_extract" && \\
+rm -rf temp_extract && \\
+echo "=== EXTRACTION PROCESS COMPLETE ==="`;
+          extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c '${extractCmd}'`, { ignoreError: true });
           
           // Log what happened during extraction
+          Logger.log(`📋 EXTRACTION OUTPUT:`, '📋');
+          Logger.log(extractResult.output, '📄');
+          
           if (!extractResult.success) {
-            Logger.log(`❌ GitHub API zipball extraction failed: ${extractResult.output}`, '❌');
+            Logger.log(`❌ GitHub API zipball extraction failed with exit code: ${extractResult.exitCode}`, '❌');
             // Check if temp_extract still exists and what's in it
-            const tempCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && ls -la temp_extract'`, { ignoreError: true });
+            const tempCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && if [ -d temp_extract ]; then echo "temp_extract still exists:"; ls -la temp_extract; else echo "temp_extract does not exist"; fi'`, { ignoreError: true });
             if (tempCheck.success) {
-              Logger.log(`📋 temp_extract contents after failed extraction:`, '📋');
+              Logger.log(`📋 temp_extract status after failed extraction:`, '📋');
               Logger.log(tempCheck.output, '📄');
             }
           } else {
-            Logger.log(`✅ GitHub API zipball extraction command completed`, '✅');
+            Logger.log(`✅ GitHub API zipball extraction command completed successfully`, '✅');
+            
+            // CRITICAL: Check if files actually made it to the target directory
+            const finalCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && echo "=== FINAL VERIFICATION ===" && ls -la ${directory}/ && echo "=== FILE COUNT ===" && find ${directory} -type f | wc -l && echo "=== SAMPLE FILES ===" && find ${directory} -type f | head -5'`, { ignoreError: true });
+            if (finalCheck.success) {
+              Logger.log(`📋 FINAL EXTRACTION VERIFICATION:`, '📋');
+              Logger.log(finalCheck.output, '📄');
+            }
           }
         } else {
           extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p "${directory}" && unzip -o plugin.zip -d "${directory}" && rm plugin.zip'`, { ignoreError: true });
