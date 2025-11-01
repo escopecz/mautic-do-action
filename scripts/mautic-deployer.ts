@@ -485,11 +485,11 @@ PORT=${this.config.port}
       if (authToken && cleanUrl.includes('github.com')) {
         // Log sanitized URL for debugging (without token)
         Logger.log(`Downloading from GitHub with authentication: ${cleanUrl}`, '🔍');
-        // Use GitHub API endpoint with proper redirect following
-        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v`;
+        // Use curl with GitHub API endpoint and proper headers
+        downloadCommand = `curl -L -o "${downloadPath}" -H "Authorization: Bearer ${authToken}" -H "Accept: application/vnd.github.v3+json" --connect-timeout 30 --max-time 60 --retry 2 "${cleanUrl}"`;
       } else {
         Logger.log(`Downloading from public URL: ${cleanUrl}`, '🔍');
-        downloadCommand = `wget -O "${downloadPath}" "${cleanUrl}" --timeout=30 --tries=2 -v`;
+        downloadCommand = `curl -L -o "${downloadPath}" --connect-timeout 30 --max-time 60 --retry 2 "${cleanUrl}"`;
       }
       
       // Download the plugin ZIP file
@@ -634,15 +634,15 @@ PORT=${this.config.port}
       // Use URL-specific token if provided, otherwise fall back to global token
       const authToken = token || this.config.githubToken;
       
-      // Prepare wget command
-      let wgetCommand = '';
+      // Prepare curl command
+      let curlCommand = '';
       if (authToken && cleanUrl.includes('github.com')) {
         Logger.log(`Installing theme with GitHub authentication: ${cleanUrl}`, '🔍');
-        // Use GitHub API endpoint with proper redirect following
-        wgetCommand = `wget -O theme.zip "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v`;
+        // Use GitHub API endpoint with proper headers
+        curlCommand = `curl -L -o theme.zip -H "Authorization: Bearer ${authToken}" -H "Accept: application/vnd.github.v3+json" --connect-timeout 30 --max-time 60 --retry 2 "${cleanUrl}"`;
       } else {
         Logger.log(`Installing theme from public URL: ${cleanUrl}`, '🔍');
-        wgetCommand = `wget -O theme.zip "${cleanUrl}" --timeout=30 --tries=2 -v`;
+        curlCommand = `curl -L -o theme.zip --connect-timeout 30 --max-time 60 --retry 2 "${cleanUrl}"`;
       }
       
       // Extract to specified directory or default behavior
@@ -654,7 +654,7 @@ PORT=${this.config.port}
       }
       
       await ProcessManager.runShell(`
-        docker exec mautic_web bash -c "cd /var/www/html/docroot/themes && ${wgetCommand} && ${extractCommand}"
+        docker exec mautic_web bash -c "cd /var/www/html/docroot/themes && ${curlCommand} && ${extractCommand}"
       `, { ignoreError: true });
       
       const displayName = directory ? `${themeUrl} → ${directory}` : themeUrl;
@@ -702,22 +702,8 @@ PORT=${this.config.port}
       // Use URL-specific token if provided, otherwise fall back to global token
       const authToken = token || this.config.githubToken;
       
-      // Prepare wget command
-      let wgetCommand = '';
-      if (authToken && cleanUrl.includes('github.com')) {
-        Logger.log(`Installing plugin with GitHub authentication: ${cleanUrl}`, '🔍');
-        // Use GitHub API endpoint with proper redirect following
-        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v`;
-      } else {
-        Logger.log(`Installing plugin from public URL: ${cleanUrl}`, '🔍');
-        wgetCommand = `wget -O plugin.zip "${cleanUrl}" --timeout=30 --tries=2 -v`;
-      }
-      
-      // Download and validate the plugin
-      Logger.log(`Attempting to download with command: ${wgetCommand.replace(/token=[^"'\s]*/g, 'token=***')}`, '🔍');
-      
       // Check if required tools are available in container
-      const toolsCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'which wget && which unzip && which file'`, { ignoreError: true });
+      const toolsCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'which curl && which unzip && which file'`, { ignoreError: true });
       if (!toolsCheck.success) {
         Logger.log(`⚠️ Warning: Some required tools may be missing in container: ${toolsCheck.output}`, '⚠️');
       } else {
@@ -727,10 +713,10 @@ PORT=${this.config.port}
       // Download the plugin using a more reliable approach
       let downloadCommand;
       if (authToken && cleanUrl.includes('github.com')) {
-        // For GitHub API, create a temporary script to avoid shell escaping issues
-        downloadCommand = `docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && wget -O plugin.zip "${cleanUrl}" --header="Authorization: Bearer ${authToken}" --timeout=30 --tries=2 --no-check-certificate --max-redirect=5 -v'`;
+        // For GitHub API with authentication, use curl with proper headers
+        downloadCommand = `docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && curl -L -o plugin.zip -H "Authorization: Bearer ${authToken}" -H "Accept: application/vnd.github.v3+json" --connect-timeout 30 --max-time 60 --retry 2 "${cleanUrl}"'`;
       } else {
-        downloadCommand = `docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && wget -O plugin.zip "${cleanUrl}" --timeout=30 --tries=2 -v'`;
+        downloadCommand = `docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && curl -L -o plugin.zip --connect-timeout 30 --max-time 60 --retry 2 "${cleanUrl}"'`;
       }
       
       const downloadResult = await ProcessManager.runShell(downloadCommand, { ignoreError: true });
