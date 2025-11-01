@@ -331,7 +331,7 @@ PORT=${this.config.port}
     }
   }
   
-  private async installThemesAndPlugins(): Promise<void> {
+  public async installThemesAndPlugins(): Promise<void> {
     Logger.log('Installing themes and plugins...', '🎨');
     
     // Check if we should use the custom Docker image approach or runtime installation
@@ -929,7 +929,7 @@ PORT=${this.config.port}
   /**
    * Clear Mautic cache using simple file removal
    */
-  private async clearCache(context: string): Promise<void> {
+  public async clearCache(context: string): Promise<void> {
     Logger.info(`🧹 Clearing cache ${context}...`);
     
     try {

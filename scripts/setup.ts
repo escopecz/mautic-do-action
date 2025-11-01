@@ -100,6 +100,15 @@ async function main() {
       } else {
         Logger.success('Mautic is already up to date, no changes needed');
       }
+
+      // Always install themes and plugins for existing installations 
+      // (handles new plugins/themes or upgrades to existing ones)
+      if (config.mauticThemes || config.mauticPlugins) {
+        Logger.log('Installing/updating themes and plugins for existing installation...', '🎨');
+        await deployer.installThemesAndPlugins();
+        // Clear cache after installing packages
+        await deployer.clearCache('after installing themes/plugins');
+      }
     } else {
       Logger.log('No existing installation found, performing fresh installation...', '🆕');
       const installSuccess = await deployer.performInstallation();
