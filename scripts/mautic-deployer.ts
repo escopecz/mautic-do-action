@@ -511,7 +511,13 @@ PORT=${this.config.port}
       // Extract the ZIP file to plugins directory
       let extractCommand = '';
       if (directory) {
-        extractCommand = `cd build/plugins && mkdir -p "${directory}" && unzip -o "${fileName}" -d "${directory}" && rm "${fileName}"`;
+        // For GitHub API zipballs, we need to handle the nested directory structure
+        if (cleanUrl.includes('api.github.com')) {
+          // GitHub API creates a zip with a subdirectory named after the commit
+          extractCommand = `cd build/plugins && mkdir -p temp_extract && unzip -o "${fileName}" -d temp_extract && rm "${fileName}" && mv temp_extract/*/* "${directory}/" && rm -rf temp_extract`;
+        } else {
+          extractCommand = `cd build/plugins && mkdir -p "${directory}" && unzip -o "${fileName}" -d "${directory}" && rm "${fileName}"`;
+        }
       } else {
         extractCommand = `cd build/plugins && unzip -o "${fileName}" && rm "${fileName}"`;
       }
@@ -667,7 +673,13 @@ PORT=${this.config.port}
       // Extract to specified directory or default behavior
       let extractCommand = '';
       if (directory) {
-        extractCommand = `mkdir -p "${directory}" && unzip -o theme.zip -d "${directory}" && rm theme.zip`;
+        // For GitHub API zipballs, we need to handle the nested directory structure
+        if (cleanUrl.includes('api.github.com')) {
+          // GitHub API creates a zip with a subdirectory named after the commit
+          extractCommand = `mkdir -p temp_extract && unzip -o theme.zip -d temp_extract && rm theme.zip && mv temp_extract/*/* "${directory}/" && rm -rf temp_extract`;
+        } else {
+          extractCommand = `mkdir -p "${directory}" && unzip -o theme.zip -d "${directory}" && rm theme.zip`;
+        }
       } else {
         extractCommand = `unzip -o theme.zip && rm theme.zip`;
       }
@@ -795,7 +807,14 @@ PORT=${this.config.port}
       // Extract to specified directory or default behavior
       let extractResult;
       if (directory) {
-        extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p "${directory}" && unzip -o plugin.zip -d "${directory}" && rm plugin.zip'`, { ignoreError: true });
+        // For GitHub API zipballs, we need to handle the nested directory structure
+        if (cleanUrl.includes('api.github.com')) {
+          // GitHub API creates a zip with a subdirectory named after the commit
+          // Extract to temp, then move contents to target directory
+          extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p temp_extract && unzip -o plugin.zip -d temp_extract && rm plugin.zip && mv temp_extract/*/* "${directory}/" && rm -rf temp_extract'`, { ignoreError: true });
+        } else {
+          extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p "${directory}" && unzip -o plugin.zip -d "${directory}" && rm plugin.zip'`, { ignoreError: true });
+        }
       } else {
         extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && unzip -o plugin.zip && rm plugin.zip'`, { ignoreError: true });
       }
@@ -811,6 +830,22 @@ PORT=${this.config.port}
         if (verifyResult.success) {
           Logger.log(`📋 Plugin directory contents after installation:`, '📋');
           Logger.log(verifyResult.output, '📄');
+        }
+
+        // Verify that the main plugin file exists if we have a directory name
+        if (directory) {
+          const pluginFileCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'test -f /var/www/html/docroot/plugins/${directory}/${directory}.php'`, { ignoreError: true });
+          
+          if (pluginFileCheck.success) {
+            Logger.log(`✅ Main plugin file ${directory}.php found in correct location`, '✅');
+          } else {
+            Logger.log(`⚠️ Warning: Main plugin file ${directory}.php not found, checking directory contents...`, '⚠️');
+            const dirContents = await ProcessManager.runShell(`docker exec mautic_web bash -c 'ls -la /var/www/html/docroot/plugins/${directory}/'`, { ignoreError: true });
+            if (dirContents.success) {
+              Logger.log(`📋 Directory contents for ${directory}:`, '📋');
+              Logger.log(dirContents.output, '📄');
+            }
+          }
         }
 
         // Run Mautic plugin installation command
