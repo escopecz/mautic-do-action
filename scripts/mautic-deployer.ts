@@ -825,8 +825,30 @@ PORT=${this.config.port}
         // For GitHub API zipballs, we need to handle the nested directory structure
         if (cleanUrl.includes('api.github.com')) {
           // GitHub API creates a zip with a subdirectory named after the commit
+          Logger.log(`🔍 Extracting GitHub API zipball to ${directory}...`, '🔍');
+          
+          // First, let's see what's in the zip
+          const zipContents = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && unzip -l plugin.zip'`, { ignoreError: true });
+          if (zipContents.success) {
+            Logger.log(`📋 ZIP file contents:`, '📋');
+            Logger.log(zipContents.output, '📄');
+          }
+          
           // Extract to temp, find the subdirectory, then move contents to target directory
           extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p temp_extract "${directory}" && unzip -o plugin.zip -d temp_extract && rm plugin.zip && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract'`, { ignoreError: true });
+          
+          // Log what happened during extraction
+          if (!extractResult.success) {
+            Logger.log(`❌ GitHub API zipball extraction failed: ${extractResult.output}`, '❌');
+            // Check if temp_extract still exists and what's in it
+            const tempCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && ls -la temp_extract'`, { ignoreError: true });
+            if (tempCheck.success) {
+              Logger.log(`📋 temp_extract contents after failed extraction:`, '📋');
+              Logger.log(tempCheck.output, '📄');
+            }
+          } else {
+            Logger.log(`✅ GitHub API zipball extraction command completed`, '✅');
+          }
         } else {
           extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p "${directory}" && unzip -o plugin.zip -d "${directory}" && rm plugin.zip'`, { ignoreError: true });
         }
@@ -845,6 +867,15 @@ PORT=${this.config.port}
         if (verifyResult.success) {
           Logger.log(`📋 Plugin directory contents after installation:`, '📋');
           Logger.log(verifyResult.output, '📄');
+        }
+
+        // Show detailed contents of the specific plugin directory
+        if (directory) {
+          const detailCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'ls -la /var/www/html/docroot/plugins/${directory}/ && echo "File count:" && find /var/www/html/docroot/plugins/${directory} -type f | wc -l'`, { ignoreError: true });
+          if (detailCheck.success) {
+            Logger.log(`📋 Detailed contents of ${directory} directory:`, '📋');
+            Logger.log(detailCheck.output, '📄');
+          }
         }
 
         // Verify that the main plugin file exists if we have a directory name

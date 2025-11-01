@@ -178,6 +178,12 @@ jobs:
                 plugin_success=$((plugin_success + 1))
               else
                 echo "⚠️ StripePlugin directory exists but no PHP files found"
+                echo "🔍 Debug: Contents of StripePlugin directory:"
+                docker exec mautic_web ls -la /var/www/html/docroot/plugins/StripePlugin/ || echo "Failed to list directory contents"
+                echo "🔍 Debug: Looking for any files in StripePlugin:"
+                docker exec mautic_web find /var/www/html/docroot/plugins/StripePlugin -type f | head -10 || echo "No files found"
+                echo "🔍 Debug: Directory size and file count:"
+                docker exec mautic_web bash -c 'du -sh /var/www/html/docroot/plugins/StripePlugin/ && find /var/www/html/docroot/plugins/StripePlugin -type f | wc -l' || echo "Failed to get directory info"
               fi
             else
               echo "⚠️ StripePlugin directory not found (check CHIMPINO_GITHUB_TOKEN secret)"
