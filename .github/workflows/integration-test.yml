@@ -39,7 +39,7 @@ jobs:
           # Start with older version for upgrade testing
           mautic-version: '6.0.4-apache'
           plugins: |
-            https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
+            https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripeBundle&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
           
       - name: Show initial deployment results
         run: |
@@ -170,23 +170,23 @@ jobs:
             
             plugin_success=0
             
-            # Check StripePlugin (private repo with token)
-            if docker exec mautic_web ls /var/www/html/docroot/plugins/StripePlugin >/dev/null 2>&1; then
-              echo "✅ StripePlugin directory found"
-              if docker exec mautic_web find /var/www/html/docroot/plugins/StripePlugin -name "*.php" | head -1 | grep -q ".php"; then
-                echo "✅ StripePlugin contains PHP files - installation successful"
+            # Check StripeBundle (private repo with token)
+            if docker exec mautic_web ls /var/www/html/docroot/plugins/StripeBundle >/dev/null 2>&1; then
+              echo "✅ StripeBundle directory found"
+              if docker exec mautic_web find /var/www/html/docroot/plugins/StripeBundle -name "*.php" | head -1 | grep -q ".php"; then
+                echo "✅ StripeBundle contains PHP files - installation successful"
                 plugin_success=$((plugin_success + 1))
               else
-                echo "⚠️ StripePlugin directory exists but no PHP files found"
-                echo "🔍 Debug: Contents of StripePlugin directory:"
-                docker exec mautic_web ls -la /var/www/html/docroot/plugins/StripePlugin/ || echo "Failed to list directory contents"
-                echo "🔍 Debug: Looking for any files in StripePlugin:"
-                docker exec mautic_web find /var/www/html/docroot/plugins/StripePlugin -type f | head -10 || echo "No files found"
+                echo "⚠️ StripeBundle directory exists but no PHP files found"
+                echo "🔍 Debug: Contents of StripeBundle directory:"
+                docker exec mautic_web ls -la /var/www/html/docroot/plugins/StripeBundle/ || echo "Failed to list directory contents"
+                echo "🔍 Debug: Looking for any files in StripeBundle:"
+                docker exec mautic_web find /var/www/html/docroot/plugins/StripeBundle -type f | head -10 || echo "No files found"
                 echo "🔍 Debug: Directory size and file count:"
-                docker exec mautic_web bash -c 'du -sh /var/www/html/docroot/plugins/StripePlugin/ && find /var/www/html/docroot/plugins/StripePlugin -type f | wc -l' || echo "Failed to get directory info"
+                docker exec mautic_web bash -c 'du -sh /var/www/html/docroot/plugins/StripeBundle/ && find /var/www/html/docroot/plugins/StripeBundle -type f | wc -l' || echo "Failed to get directory info"
               fi
             else
-              echo "⚠️ StripePlugin directory not found (check CHIMPINO_GITHUB_TOKEN secret)"
+              echo "⚠️ StripeBundle directory not found (check CHIMPINO_GITHUB_TOKEN secret)"
             fi
             
             echo "📋 Available plugin directories:"
@@ -216,11 +216,11 @@ jobs:
             # Check if plugin files are accessible from container
             plugin_count=0
             
-            if docker exec mautic_web ls /var/www/html/plugins/StripePlugin/ >/dev/null 2>&1; then
-              echo "✅ StripePlugin files are accessible from Mautic container"
+            if docker exec mautic_web ls /var/www/html/plugins/StripeBundle/ >/dev/null 2>&1; then
+              echo "✅ StripeBundle files are accessible from Mautic container"
               plugin_count=$((plugin_count + 1))
             else
-              echo "ℹ️ StripePlugin not accessible from container"
+              echo "ℹ️ StripeBundle not accessible from container"
             fi
             
             if docker exec mautic_web ls /var/www/html/plugins/IntegrationsPlugin/ >/dev/null 2>&1; then

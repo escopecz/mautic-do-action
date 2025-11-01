@@ -263,7 +263,7 @@ CHIMPINO_GITHUB_TOKEN = ghp_zzzzzzzzzzzzzzzzzz   # Access to chimpino/* repos
     vps-name: 'mautic-with-plugins'
     email: 'admin@example.com'
     plugins: |
-      https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
+      https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripeBundle&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
       https://github.com/company/analytics-plugin/archive/v1.0.zip?directory=AnalyticsPlugin&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
       vendor/public-plugin:^2.0
     themes: |
@@ -311,7 +311,7 @@ CHIMPINO_GITHUB_TOKEN = ghp_zzzzzzzzzzzzzzzzzz   # Access to chimpino/* repos
     vps-name: 'mautic-with-plugins'
     email: 'admin@example.com'
     plugins: |
-      https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripePlugin&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
+      https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripeBundle&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
       vendor/public-plugin:^2.0
     themes: |
       https://github.com/company/custom-theme/archive/main.zip?directory=CustomTheme&token=${{ secrets.COMPANY_GITHUB_TOKEN }}
