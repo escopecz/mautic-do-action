@@ -514,7 +514,7 @@ PORT=${this.config.port}
         // For GitHub API zipballs, we need to handle the nested directory structure
         if (cleanUrl.includes('api.github.com')) {
           // GitHub API creates a zip with a subdirectory named after the commit
-          extractCommand = `cd build/plugins && mkdir -p temp_extract && unzip -o "${fileName}" -d temp_extract && rm "${fileName}" && mv temp_extract/*/* "${directory}/" && rm -rf temp_extract`;
+          extractCommand = `cd build/plugins && mkdir -p temp_extract "${directory}" && unzip -o "${fileName}" -d temp_extract && rm "${fileName}" && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract`;
         } else {
           extractCommand = `cd build/plugins && mkdir -p "${directory}" && unzip -o "${fileName}" -d "${directory}" && rm "${fileName}"`;
         }
@@ -676,7 +676,7 @@ PORT=${this.config.port}
         // For GitHub API zipballs, we need to handle the nested directory structure
         if (cleanUrl.includes('api.github.com')) {
           // GitHub API creates a zip with a subdirectory named after the commit
-          extractCommand = `mkdir -p temp_extract && unzip -o theme.zip -d temp_extract && rm theme.zip && mv temp_extract/*/* "${directory}/" && rm -rf temp_extract`;
+          extractCommand = `mkdir -p temp_extract "${directory}" && unzip -o theme.zip -d temp_extract && rm theme.zip && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract`;
         } else {
           extractCommand = `mkdir -p "${directory}" && unzip -o theme.zip -d "${directory}" && rm theme.zip`;
         }
@@ -687,6 +687,18 @@ PORT=${this.config.port}
       await ProcessManager.runShell(`
         docker exec mautic_web bash -c "cd /var/www/html/docroot/themes && ${curlCommand} && ${extractCommand}"
       `, { ignoreError: true });
+
+      // Fix ownership and permissions for the theme directory if specified
+      if (directory) {
+        Logger.log(`🔒 Setting correct ownership and permissions for theme ${directory}...`, '🔒');
+        const chownResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'chown -R www-data:www-data /var/www/html/docroot/themes/${directory} && chmod -R 755 /var/www/html/docroot/themes/${directory}'`, { ignoreError: true });
+        
+        if (chownResult.success) {
+          Logger.log(`✅ Theme ownership and permissions set correctly`, '✅');
+        } else {
+          Logger.log(`⚠️ Warning: Could not set theme ownership/permissions: ${chownResult.output}`, '⚠️');
+        }
+      }
 
       // Clear cache after theme installation
       Logger.log(`🧹 Clearing cache after theme installation...`, '🧹');
@@ -742,6 +754,9 @@ PORT=${this.config.port}
       
       // Use URL-specific token if provided, otherwise fall back to global token
       const authToken = token || this.config.githubToken;
+
+      // Clean up any leftover temp directories from previous failed extractions
+      await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && rm -rf temp_extract'`, { ignoreError: true });
 
       // Handle upgrades: remove existing plugin directory if it exists
       if (directory) {
@@ -810,8 +825,8 @@ PORT=${this.config.port}
         // For GitHub API zipballs, we need to handle the nested directory structure
         if (cleanUrl.includes('api.github.com')) {
           // GitHub API creates a zip with a subdirectory named after the commit
-          // Extract to temp, then move contents to target directory
-          extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p temp_extract && unzip -o plugin.zip -d temp_extract && rm plugin.zip && mv temp_extract/*/* "${directory}/" && rm -rf temp_extract'`, { ignoreError: true });
+          // Extract to temp, find the subdirectory, then move contents to target directory
+          extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p temp_extract "${directory}" && unzip -o plugin.zip -d temp_extract && rm plugin.zip && find temp_extract -mindepth 1 -maxdepth 1 -type d -exec cp -r {}/* "${directory}/" \\; && rm -rf temp_extract'`, { ignoreError: true });
         } else {
           extractResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html/docroot/plugins && mkdir -p "${directory}" && unzip -o plugin.zip -d "${directory}" && rm plugin.zip'`, { ignoreError: true });
         }
@@ -845,6 +860,23 @@ PORT=${this.config.port}
               Logger.log(`📋 Directory contents for ${directory}:`, '📋');
               Logger.log(dirContents.output, '📄');
             }
+          }
+
+          // Fix ownership and permissions for the plugin directory
+          Logger.log(`🔒 Setting correct ownership and permissions for ${directory}...`, '🔒');
+          const chownResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'chown -R www-data:www-data /var/www/html/docroot/plugins/${directory} && chmod -R 755 /var/www/html/docroot/plugins/${directory}'`, { ignoreError: true });
+          
+          if (chownResult.success) {
+            Logger.log(`✅ Ownership and permissions set correctly`, '✅');
+          } else {
+            Logger.log(`⚠️ Warning: Could not set ownership/permissions: ${chownResult.output}`, '⚠️');
+          }
+
+          // Verify final ownership and permissions
+          const permCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'ls -la /var/www/html/docroot/plugins/${directory}/'`, { ignoreError: true });
+          if (permCheck.success) {
+            Logger.log(`📋 Final ownership and permissions for ${directory}:`, '📋');
+            Logger.log(permCheck.output, '📄');
           }
         }
 
