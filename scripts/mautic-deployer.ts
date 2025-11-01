@@ -633,6 +633,25 @@ PORT=${this.config.port}
       
       // Use URL-specific token if provided, otherwise fall back to global token
       const authToken = token || this.config.githubToken;
+
+      // Handle upgrades: remove existing theme directory if it exists
+      if (directory) {
+        Logger.log(`🔄 Checking for existing theme: ${directory}`, '🔄');
+        const checkExisting = await ProcessManager.runShell(`docker exec mautic_web bash -c 'test -d /var/www/html/docroot/themes/${directory}'`, { ignoreError: true });
+        
+        if (checkExisting.success) {
+          Logger.log(`🗑️ Removing existing theme directory: ${directory}`, '🗑️');
+          const removeResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'rm -rf /var/www/html/docroot/themes/${directory}'`, { ignoreError: true });
+          
+          if (!removeResult.success) {
+            Logger.log(`⚠️ Warning: Could not remove existing theme directory: ${removeResult.output}`, '⚠️');
+          } else {
+            Logger.log(`✅ Existing theme directory removed successfully`, '✅');
+          }
+        } else {
+          Logger.log(`ℹ️ No existing theme directory found (fresh installation)`, 'ℹ️');
+        }
+      }
       
       // Prepare curl command
       let curlCommand = '';
@@ -656,6 +675,16 @@ PORT=${this.config.port}
       await ProcessManager.runShell(`
         docker exec mautic_web bash -c "cd /var/www/html/docroot/themes && ${curlCommand} && ${extractCommand}"
       `, { ignoreError: true });
+
+      // Clear cache after theme installation
+      Logger.log(`🧹 Clearing cache after theme installation...`, '🧹');
+      const cacheResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && rm -rf var/cache/prod/*'`, { ignoreError: true });
+      
+      if (!cacheResult.success) {
+        Logger.log(`⚠️ Warning: Cache clear failed: ${cacheResult.output}`, '⚠️');
+      } else {
+        Logger.log(`✅ Cache cleared successfully`, '✅');
+      }
       
       const displayName = directory ? `${themeUrl} → ${directory}` : themeUrl;
       Logger.success(`Theme installed: ${displayName}`);
@@ -701,6 +730,25 @@ PORT=${this.config.port}
       
       // Use URL-specific token if provided, otherwise fall back to global token
       const authToken = token || this.config.githubToken;
+
+      // Handle upgrades: remove existing plugin directory if it exists
+      if (directory) {
+        Logger.log(`🔄 Checking for existing plugin: ${directory}`, '🔄');
+        const checkExisting = await ProcessManager.runShell(`docker exec mautic_web bash -c 'test -d /var/www/html/docroot/plugins/${directory}'`, { ignoreError: true });
+        
+        if (checkExisting.success) {
+          Logger.log(`🗑️ Removing existing plugin directory: ${directory}`, '🗑️');
+          const removeResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'rm -rf /var/www/html/docroot/plugins/${directory}'`, { ignoreError: true });
+          
+          if (!removeResult.success) {
+            Logger.log(`⚠️ Warning: Could not remove existing plugin directory: ${removeResult.output}`, '⚠️');
+          } else {
+            Logger.log(`✅ Existing plugin directory removed successfully`, '✅');
+          }
+        } else {
+          Logger.log(`ℹ️ No existing plugin directory found (fresh installation)`, 'ℹ️');
+        }
+      }
       
       // Check if required tools are available in container
       const toolsCheck = await ProcessManager.runShell(`docker exec mautic_web bash -c 'which curl && which unzip && which file'`, { ignoreError: true });
@@ -763,6 +811,28 @@ PORT=${this.config.port}
         if (verifyResult.success) {
           Logger.log(`📋 Plugin directory contents after installation:`, '📋');
           Logger.log(verifyResult.output, '📄');
+        }
+
+        // Run Mautic plugin installation command
+        Logger.log(`🔧 Running Mautic plugin installation command...`, '🔧');
+        const consoleResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && php bin/console mautic:plugins:install'`, { ignoreError: true });
+        
+        if (!consoleResult.success) {
+          Logger.log(`⚠️ Warning: Plugin console command failed: ${consoleResult.output}`, '⚠️');
+          // Don't throw error as plugin files are installed, console command might just need cache clear
+        } else {
+          Logger.log(`✅ Plugin registered with Mautic successfully`, '✅');
+          Logger.log(consoleResult.output, '📄');
+        }
+
+        // Clear cache after plugin installation
+        Logger.log(`🧹 Clearing cache after plugin installation...`, '🧹');
+        const cacheResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && rm -rf var/cache/prod/*'`, { ignoreError: true });
+        
+        if (!cacheResult.success) {
+          Logger.log(`⚠️ Warning: Cache clear failed: ${cacheResult.output}`, '⚠️');
+        } else {
+          Logger.log(`✅ Cache cleared successfully`, '✅');
         }
       }
       
