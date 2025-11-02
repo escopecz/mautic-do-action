@@ -249,6 +249,9 @@ export class MauticDeployer {
       // Clear cache after installation
       await this.clearCache('after installation');
       
+      // Fix media .htaccess files if they have incorrect configuration
+      await this.fixMediaHtaccess();
+      
       // Install themes and plugins if specified
       if (this.config.mauticThemes || this.config.mauticPlugins) {
         Logger.log('=== STARTING THEMES AND PLUGINS INSTALLATION ===', '🎯');
@@ -975,13 +978,31 @@ echo "=== EXTRACTION PROCESS COMPLETE ==="`;
           }
         }
 
+        // Clear cache first to ensure autoloading works
+        Logger.log(`🧹 Clearing cache before plugin registration...`, '🧹');
+        const preCacheResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && rm -rf var/cache/prod/* var/cache/dev/*'`, { ignoreError: true });
+        
+        if (!preCacheResult.success) {
+          Logger.log(`⚠️ Warning: Pre-cache clear failed: ${preCacheResult.output}`, '⚠️');
+        } else {
+          Logger.log(`✅ Pre-cache cleared successfully`, '✅');
+        }
+
         // Run Mautic plugin installation command
         Logger.log(`🔧 Running Mautic plugin installation command...`, '🔧');
-        const consoleResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && php bin/console mautic:plugins:install'`, { ignoreError: true });
+        const consoleResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && php bin/console mautic:plugins:install --force'`, { ignoreError: true });
         
         if (!consoleResult.success) {
           Logger.log(`⚠️ Warning: Plugin console command failed: ${consoleResult.output}`, '⚠️');
-          // Don't throw error as plugin files are installed, console command might just need cache clear
+          // Try alternative approach: just reload plugins
+          Logger.log(`🔄 Trying alternative plugin reload...`, '🔄');
+          const reloadResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && php bin/console mautic:plugins:reload'`, { ignoreError: true });
+          if (reloadResult.success) {
+            Logger.log(`✅ Plugin reload successful`, '✅');
+            Logger.log(reloadResult.output, '📄');
+          } else {
+            Logger.log(`⚠️ Plugin reload also failed: ${reloadResult.output}`, '⚠️');
+          }
         } else {
           Logger.log(`✅ Plugin registered with Mautic successfully`, '✅');
           Logger.log(consoleResult.output, '📄');
@@ -989,7 +1010,7 @@ echo "=== EXTRACTION PROCESS COMPLETE ==="`;
 
         // Clear cache after plugin installation
         Logger.log(`🧹 Clearing cache after plugin installation...`, '🧹');
-        const cacheResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && rm -rf var/cache/prod/*'`, { ignoreError: true });
+        const cacheResult = await ProcessManager.runShell(`docker exec mautic_web bash -c 'cd /var/www/html && rm -rf var/cache/prod/* var/cache/dev/*'`, { ignoreError: true });
         
         if (!cacheResult.success) {
           Logger.log(`⚠️ Warning: Cache clear failed: ${cacheResult.output}`, '⚠️');
@@ -1085,6 +1106,80 @@ echo "=== EXTRACTION PROCESS COMPLETE ==="`;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Logger.error(`Mautic installation failed: ${errorMessage}`);
       throw new Error(`Mautic installation failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Fix .htaccess files in media directories to use official Mautic configuration
+   */
+  private async fixMediaHtaccess(): Promise<void> {
+    Logger.log('� Checking and fixing media .htaccess files...', '�');
+    
+    try {
+      // Use the official Mautic 6.x .htaccess for media directories
+      const officialMediaHtaccess = `<IfModule mod_authz_core.c>
+    Require all granted
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Allow from all
+</IfModule>`;
+
+      // Check if images .htaccess needs fixing
+      const checkImagesHtaccess = await ProcessManager.runShell(
+        `docker exec mautic_web bash -c 'cat /var/www/html/docroot/media/images/.htaccess 2>/dev/null'`,
+        { ignoreError: true }
+      );
+      
+      if (checkImagesHtaccess.success && checkImagesHtaccess.output.includes('deny from all')) {
+        Logger.log(`⚠️ Found incorrect .htaccess in images directory, fixing...`, '⚠️');
+        
+        const fixImagesResult = await ProcessManager.runShell(
+          `docker exec mautic_web bash -c 'cat > /var/www/html/docroot/media/images/.htaccess << "EOF"
+${officialMediaHtaccess}
+EOF'`,
+          { ignoreError: true }
+        );
+        
+        if (fixImagesResult.success) {
+          Logger.log(`✅ Fixed .htaccess for images directory`, '✅');
+        } else {
+          Logger.log(`⚠️ Warning: Could not fix images .htaccess: ${fixImagesResult.output}`, '⚠️');
+        }
+      } else {
+        Logger.log(`✅ Images .htaccess appears to be correct`, '✅');
+      }
+
+      // Check if files .htaccess needs fixing
+      const checkFilesHtaccess = await ProcessManager.runShell(
+        `docker exec mautic_web bash -c 'cat /var/www/html/docroot/media/files/.htaccess 2>/dev/null'`,
+        { ignoreError: true }
+      );
+      
+      if (checkFilesHtaccess.success && checkFilesHtaccess.output.includes('deny from all')) {
+        Logger.log(`⚠️ Found incorrect .htaccess in files directory, fixing...`, '⚠️');
+        
+        const fixFilesResult = await ProcessManager.runShell(
+          `docker exec mautic_web bash -c 'cat > /var/www/html/docroot/media/files/.htaccess << "EOF"
+${officialMediaHtaccess}
+EOF'`,
+          { ignoreError: true }
+        );
+        
+        if (fixFilesResult.success) {
+          Logger.log(`✅ Fixed .htaccess for files directory`, '✅');
+        } else {
+          Logger.log(`⚠️ Warning: Could not fix files .htaccess: ${fixFilesResult.output}`, '⚠️');
+        }
+      } else {
+        Logger.log(`✅ Files .htaccess appears to be correct`, '✅');
+      }
+      
+      Logger.success('✅ Media .htaccess check completed');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Logger.error(`⚠️ Media .htaccess check failed: ${errorMessage}`);
+      // Don't throw error as this is not critical for basic functionality
     }
   }
 
