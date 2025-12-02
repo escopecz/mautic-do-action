@@ -25,7 +25,7 @@ inputs:
   mautic-version:
     description: 'Mautic Docker image version'
     required: false
-    default: '6.0.5-apache'
+    default: '6.0.7-apache'
   mautic-port:
     description: 'Port for Mautic instance'
     required: false
