@@ -6,6 +6,7 @@ A GitHub Action to automatically deploy Mautic (open-source marketing automation
 
 - 🚀 **One-click deployment** - Deploy Mautic in minutes, not hours
 - 🖥️ **Automatic VPS creation** - Creates and configures DigitalOcean droplets
+- 📏 **Smart resizing** - Automatically resizes droplets when you change vps-size in config
 - 🔒 **SSL/HTTPS support** - Automatic Let's Encrypt SSL certificates (when domain provided)
 - 🐳 **Docker-based** - Reliable, containerized deployment with Apache
 - 📧 **Email ready** - Pre-configured for email marketing campaigns
@@ -15,6 +16,27 @@ A GitHub Action to automatically deploy Mautic (open-source marketing automation
 - 📊 **Basic monitoring** - DigitalOcean monitoring, container logging, and deployment artifacts
 
 ## 🚀 Quick Start
+
+## 📋 System Requirements
+
+**Minimum Recommended VPS Size:** `s-1vcpu-2gb` (2GB RAM, $12/month)
+
+⚠️ **Important:** Mautic with MySQL 8.0 requires at least 2GB RAM for stable operation:
+- MySQL 8.0 baseline: ~400-500MB RAM
+- Mautic application: ~300-400MB RAM  
+- OS and services: ~200-300MB RAM
+- Growth buffer for database and cache: ~500MB
+
+**Using a 1GB droplet will cause crashes** after a few days as:
+- Database grows with contacts/campaigns
+- Cron jobs increase memory pressure
+- MySQL gets OOM-killed, corrupting the database
+- System becomes unstable even with swap space
+
+💡 **Recommended sizes by usage:**
+- **Small/Testing:** `s-1vcpu-2gb` (up to 5K contacts)
+- **Medium:** `s-2vcpu-4gb` (up to 50K contacts)
+- **Large:** `s-4vcpu-8gb` (50K+ contacts)
 
 ### 1. Prerequisites
 
@@ -142,7 +164,7 @@ jobs:
 
 | Parameter | Description | Default | Example |
 |-----------|-------------|---------|---------|
-| `vps-size` | DigitalOcean droplet size | `s-2vcpu-2gb` | `s-4vcpu-8gb` |
+| `vps-size` | DigitalOcean droplet size (automatically resizes if changed) | `s-2vcpu-2gb` | `s-4vcpu-8gb` |
 | `vps-region` | DigitalOcean region | `nyc1` | `fra1`, `lon1`, `sgp1` |
 | `domain` | Custom domain name | _(uses IP)_ | `mautic.example.com` |
 | `mautic-version` | Mautic Docker image version | `6.0.5-apache` | `6.0.4-apache` |
@@ -448,7 +470,23 @@ Error: Permission denied (publickey)
 - Use an SSH key without a passphrase for automation
 - Check the action logs for debugging information about key verification
 
-**3. Domain Not Pointing to Server**
+**3. Mautic Site Offline - "Currently offline due to error"**
+```
+The site is currently offline due to encountering an error.
+```
+**Common Causes:**
+- **Out of Memory (OOM)**: Most common on 1GB droplets after a few days
+  - MySQL 8.0 requires ~400-500MB baseline memory
+  - Database growth + cron jobs can exceed available RAM
+  - **Solution**: Update `vps-size` to `s-1vcpu-2gb` or larger in your workflow YAML and re-run the action
+  - The action will automatically resize your droplet with minimal downtime
+- **Database Corruption**: From repeated OOM kills or power issues
+  - Check logs: `docker logs mautic_db --tail 50`
+  - May need to restore from backup or recreate
+- **Cache Issues**: Corrupted cache files
+  - SSH into server: `docker exec mautic_web rm -rf /var/www/html/var/cache/*`
+
+**4. Domain Not Pointing to Server**
 ```
 Error: Domain example.com does not point to VPS IP
 ```

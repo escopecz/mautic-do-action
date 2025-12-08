@@ -107,6 +107,34 @@ if ! doctl compute droplet list | grep -q "${INPUT_VPS_NAME}"; then
     sleep 30
 else
     echo "✅ VPS '${INPUT_VPS_NAME}' already exists"
+    
+    # Check if droplet size matches desired size
+    echo "🔍 Checking if droplet size matches desired configuration..."
+    CURRENT_SIZE=$(doctl compute droplet get "${INPUT_VPS_NAME}" --format Size --no-header)
+    
+    if [ "$CURRENT_SIZE" != "${INPUT_VPS_SIZE}" ]; then
+        echo "⚠️  Droplet size mismatch detected!"
+        echo "   Current size: ${CURRENT_SIZE}"
+        echo "   Desired size: ${INPUT_VPS_SIZE}"
+        echo "🔄 Resizing droplet to ${INPUT_VPS_SIZE}..."
+        echo "   Note: This will cause a brief downtime (typically 1-2 minutes)"
+        
+        # Get droplet ID
+        DROPLET_ID=$(doctl compute droplet get "${INPUT_VPS_NAME}" --format ID --no-header)
+        
+        # Perform resize with disk scaling
+        if doctl compute droplet-action resize "$DROPLET_ID" --size "${INPUT_VPS_SIZE}" --wait; then
+            echo "✅ Droplet resized successfully"
+            echo "⏳ Waiting for droplet to stabilize..."
+            sleep 30
+        else
+            echo "❌ Error: Failed to resize droplet"
+            echo "   Please resize manually in DigitalOcean console or check droplet status"
+            exit 1
+        fi
+    else
+        echo "✅ Droplet size is correct: ${CURRENT_SIZE}"
+    fi
 fi
 
 # Get VPS IP

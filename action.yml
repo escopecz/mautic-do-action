@@ -40,9 +40,9 @@ inputs:
     required: false
     default: 'mautic-vps'
   vps-size:
-    description: 'DigitalOcean droplet size (s-1vcpu-1gb, s-1vcpu-2gb, s-2vcpu-2gb, s-2vcpu-4gb, s-4vcpu-8gb)'
+    description: 'DigitalOcean droplet size - Minimum s-1vcpu-2gb recommended for MySQL 8.0 + Mautic (s-1vcpu-2gb, s-2vcpu-2gb, s-2vcpu-4gb, s-4vcpu-8gb)'
     required: false
-    default: 's-1vcpu-1gb'
+    default: 's-1vcpu-2gb'
   vps-region:
     description: 'DigitalOcean region'
     required: false
