@@ -43,6 +43,10 @@ services:
       - DOCKER_MAUTIC_ROLE=mautic_web
       - DOCKER_MAUTIC_LOAD_TEST_DATA=false
       - DOCKER_MAUTIC_RUN_MIGRATIONS=true
+      # PHP timeout settings for SMTP configuration and long-running operations
+      - PHP_MAX_EXECUTION_TIME=300
+      - PHP_MAX_INPUT_TIME=300
+      - PHP_MEMORY_LIMIT=512M
     volumes: *mautic-volumes
     restart: unless-stopped
     healthcheck:
