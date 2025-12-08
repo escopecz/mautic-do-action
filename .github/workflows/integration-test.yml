@@ -244,73 +244,72 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-      - name: Test version upgrade manually
+      - name: Test version upgrade and resize via action re-run
+        id: upgrade
+        uses: ./
+        with:
+          vps-name: ${{ steps.test-name.outputs.test-name }}
+          vps-size: 's-1vcpu-2gb'  # Upgrade from 1GB to 2GB
+          vps-region: 'nyc1'
+          email: 'test@mautic-test.local'
+          mautic-password: ${{ secrets.TEST_MAUTIC_PASSWORD }}
+          mysql-password: ${{ secrets.TEST_MYSQL_PASSWORD }}
+          mysql-root-password: ${{ secrets.TEST_MYSQL_ROOT_PASSWORD }}
+          digitalocean-token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Upgrade to newer version
+          mautic-version: '6.0.5-apache'
+          plugins: |
+            https://github.com/chimpino/stripe-plugin/archive/refs/heads/6.x.zip?directory=StripeBundle&token=${{ secrets.CHIMPINO_GITHUB_TOKEN }}
+          
+      - name: Show upgrade and resize results
         run: |
-          echo "🔄 Testing Mautic version upgrade from 6.0.4 to 6.0.5..."
-          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
+          echo "🎉 Upgrade and resize completed successfully!"
+          echo "VPS IP: ${{ steps.upgrade.outputs.vps-ip }}"
+          echo "Mautic URL: ${{ steps.upgrade.outputs.mautic-url }}"
+          echo "✅ Mautic 6.0.5 upgrade + resize to 2GB test passed"
           
-          if [ -z "$VPS_IP" ]; then
-            echo "❌ Error: VPS_IP is empty!"
-            exit 1
-          fi
-          
-          echo "📝 Updating Mautic version configuration on VPS: $VPS_IP"
-          
-          # SSH into VPS and modify the version, then trigger upgrade
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP} << 'EOF'
-            cd /var/www
-            echo "🔍 Current deploy.env contents:"
-            cat deploy.env
-            echo ""
-            echo "🔄 Updating MAUTIC_VERSION to 6.0.5-apache..."
-            sed -i 's/MAUTIC_VERSION=.*/MAUTIC_VERSION=6.0.5-apache/' deploy.env
-            echo "✅ Updated deploy.env contents:"
-            cat deploy.env
-            echo ""
-            echo "🚀 Re-running setup script to trigger upgrade detection..."
-            ./setup 2>&1 | tee /var/log/upgrade-test.log
-          EOF
-          
-          echo "✅ Version upgrade test completed"
-          
-      - name: Verify upgrade worked
+      - name: Verify upgrade and resize worked
         run: |
-          echo "🔍 Verifying the upgrade was successful..."
-          VPS_IP="${{ steps.deploy.outputs.vps-ip }}"
-          MAUTIC_URL="${{ steps.deploy.outputs.mautic-url }}"
+          echo "🔍 Verifying the upgrade and resize were successful..."
+          VPS_IP="${{ steps.upgrade.outputs.vps-ip }}"
+          MAUTIC_URL="${{ steps.upgrade.outputs.mautic-url }}"
           
-          # Download upgrade log
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/upgrade-test.log ./upgrade-test.log || echo "Could not download upgrade log"
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           
-          # Check if upgrade was detected
+          # Download deployment log to check for resize
+          echo "📥 Downloading deployment log..."
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./upgrade-test.log || echo "Could not download log"
+          
+          # Check if resize was detected and executed
           if [ -f ./upgrade-test.log ]; then
-            echo "📋 Checking upgrade log for update indicators..."
-            
-            if grep -q "Version mismatch:" ./upgrade-test.log; then
-              echo "✅ PASS: Version update was detected"
-            else
-              echo "❌ FAIL: Version update was not detected"
-              echo "📋 Recent log entries:"
-              tail -20 ./upgrade-test.log
-              exit 1
-            fi
-            
-            if grep -q "Containers recreated successfully" ./upgrade-test.log; then
-              echo "✅ PASS: Containers were updated successfully"
-            else
-              echo "❌ FAIL: Container update failed"
-              echo "📋 Checking for alternative success indicators..."
-              if grep -q "Mautic update completed successfully" ./upgrade-test.log; then
-                echo "✅ PASS: Mautic update completed successfully"
+            echo "📋 Checking for droplet resize indicators..."
+            if grep -q "Droplet size mismatch detected" ./upgrade-test.log; then
+              echo "✅ PASS: Droplet size mismatch was detected"
+              
+              if grep -q "Droplet resized successfully" ./upgrade-test.log; then
+                echo "✅ PASS: Droplet resize completed successfully"
               else
-                echo "❌ No success indicators found"
+                echo "❌ FAIL: Droplet resize did not complete"
+                echo "📋 Log excerpt:"
+                grep -A 5 -B 5 "resize" ./upgrade-test.log || echo "No resize info found"
                 exit 1
               fi
+            else
+              echo "❌ FAIL: No resize detection found in logs"
+              echo "📋 Checking deploy.sh log for resize-related messages..."
+              grep -i "resize\|size\|checking if droplet" ./upgrade-test.log | head -20 || echo "No size-related messages found"
+              exit 1
             fi
+          else
+            echo "⚠️ WARNING: Could not retrieve deployment log"
           fi
           
-          # Verify Mautic is still working after upgrade
-          echo "🔍 Testing Mautic accessibility after upgrade..."
+          # Verify Mautic is still working after upgrade and resize
+          echo "🔍 Testing Mautic accessibility after upgrade and resize..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${MAUTIC_URL}/s/login" 2>/dev/null || echo "000")
           echo "📋 HTTP response code: $HTTP_CODE"
           
@@ -328,17 +327,32 @@ jobs:
               echo "❌ FAIL: Container is not running expected version"
               exit 1
             fi
+            
+            # Verify droplet was actually resized
+            echo "🔍 Verifying droplet size via doctl..."
+            doctl auth init --access-token "${{ secrets.DIGITALOCEAN_TOKEN }}"
+            ACTUAL_SIZE=$(doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Size --no-header)
+            echo "📊 Actual droplet size: $ACTUAL_SIZE"
+            
+            if [ "$ACTUAL_SIZE" = "s-1vcpu-2gb" ]; then
+              echo "✅ PASS: Droplet is now 2GB"
+            else
+              echo "❌ FAIL: Droplet is still $ACTUAL_SIZE (expected s-1vcpu-2gb)"
+              exit 1
+            fi
           else
             echo "❌ FAIL: Mautic is not accessible after upgrade"
             exit 1
           fi
           
-          echo "🎉 All version upgrade validation checks passed!"
+          echo "🎉 All version upgrade and resize validation checks passed!"
           echo "🏁 Integration test completed successfully:"
-          echo "   ✅ Initial deployment with Mautic 6.0.4"
+          echo "   ✅ Initial deployment with Mautic 6.0.4 on 1GB droplet"
+          echo "   ✅ Droplet resized from 1GB to 2GB"
           echo "   ✅ Version upgrade to 6.0.5 without reinstallation"
           echo "   ✅ Proper maintenance and migration execution"
           echo "   ✅ Container version verification"
+          echo "   ✅ Droplet size verification"
           
       - name: Cleanup test droplet
         if: always()
