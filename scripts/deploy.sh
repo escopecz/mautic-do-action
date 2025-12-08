@@ -125,8 +125,39 @@ else
         # Perform resize with disk scaling
         if doctl compute droplet-action resize "$DROPLET_ID" --size "${INPUT_VPS_SIZE}" --wait; then
             echo "✅ Droplet resized successfully"
+            echo "⏳ Powering on droplet after resize..."
+            
+            # Power on the droplet
+            if doctl compute droplet-action power-on "$DROPLET_ID" --wait; then
+                echo "✅ Droplet powered on"
+            else
+                echo "⚠️  Warning: Failed to power on droplet, may already be on"
+            fi
+            
             echo "⏳ Waiting for droplet to stabilize..."
-            sleep 30
+            
+            # Wait for droplet to become active after resize
+            RESIZE_WAIT=0
+            RESIZE_TIMEOUT=180  # 3 minutes
+            while [ $RESIZE_WAIT -lt $RESIZE_TIMEOUT ]; do
+                DROPLET_STATUS=$(doctl compute droplet get "${INPUT_VPS_NAME}" --format Status --no-header)
+                echo "   Droplet status: ${DROPLET_STATUS} (${RESIZE_WAIT}s)"
+                
+                if [ "$DROPLET_STATUS" = "active" ]; then
+                    echo "✅ Droplet is now active after resize"
+                    break
+                fi
+                
+                sleep 10
+                RESIZE_WAIT=$((RESIZE_WAIT + 10))
+            done
+            
+            if [ $RESIZE_WAIT -ge $RESIZE_TIMEOUT ]; then
+                echo "⚠️  Warning: Droplet didn't become active within timeout, but continuing..."
+            fi
+            
+            # Additional stabilization time
+            sleep 20
         else
             echo "❌ Error: Failed to resize droplet"
             echo "   Please resize manually in DigitalOcean console or check droplet status"
