@@ -338,7 +338,7 @@ runs:
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: mautic-deployment-log-${{ inputs.vps-name }}-${{ github.run_number }}
+        name: mautic-deployment-log-${{ github.run_id }}-${{ github.job }}-${{ strategy.job-index }}
         path: ./setup-dc.log
 
     - name: Cleanup
