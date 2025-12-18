@@ -334,11 +334,17 @@ runs:
         INPUT_MYSQL_ROOT_PASSWORD: ${{ inputs.mysql-root-password }}
         ACTION_PATH: ${{ github.action_path }}
 
+    - name: Generate unique artifact ID
+      shell: bash
+      id: artifact-id
+      if: always()
+      run: echo "id=$(date +%s)-$$-$RANDOM" >> $GITHUB_OUTPUT
+      
     - name: Upload deployment log
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: mautic-deployment-log-${{ github.run_id }}-${{ github.job }}-${{ strategy.job-index }}
+        name: mautic-deployment-log-${{ steps.artifact-id.outputs.id }}
         path: ./setup-dc.log
 
     - name: Cleanup
