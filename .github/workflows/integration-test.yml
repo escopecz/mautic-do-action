@@ -283,7 +283,7 @@ jobs:
           # Verify droplet was actually resized via doctl
           echo "🔍 Verifying droplet size via doctl..."
           doctl auth init --access-token "${{ secrets.DIGITALOCEAN_TOKEN }}"
-          ACTUAL_SIZE=$(doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Size --no-header)
+          ACTUAL_SIZE=$(doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format SizeSlug --no-header)
           echo "📊 Actual droplet size: $ACTUAL_SIZE"
           
           if [ "$ACTUAL_SIZE" = "s-1vcpu-2gb" ]; then
@@ -291,7 +291,7 @@ jobs:
           else
             echo "❌ FAIL: Droplet is still $ACTUAL_SIZE (expected s-1vcpu-2gb)"
             echo "📋 Droplet info:"
-            doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Name,Size,Memory,Status
+            doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Name,SizeSlug,Memory,Status
             exit 1
           fi
           
