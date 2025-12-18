@@ -280,32 +280,19 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          # Download deployment log to check for resize
-          echo "📥 Downloading deployment log..."
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@${VPS_IP}:/var/log/setup-dc.log ./upgrade-test.log || echo "Could not download log"
+          # Verify droplet was actually resized via doctl
+          echo "🔍 Verifying droplet size via doctl..."
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_TOKEN }}"
+          ACTUAL_SIZE=$(doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Size --no-header)
+          echo "📊 Actual droplet size: $ACTUAL_SIZE"
           
-          # Check if resize was detected and executed
-          if [ -f ./upgrade-test.log ]; then
-            echo "📋 Checking for droplet resize indicators..."
-            if grep -q "Droplet size mismatch detected" ./upgrade-test.log; then
-              echo "✅ PASS: Droplet size mismatch was detected"
-              
-              if grep -q "Droplet resized successfully" ./upgrade-test.log; then
-                echo "✅ PASS: Droplet resize completed successfully"
-              else
-                echo "❌ FAIL: Droplet resize did not complete"
-                echo "📋 Log excerpt:"
-                grep -A 5 -B 5 "resize" ./upgrade-test.log || echo "No resize info found"
-                exit 1
-              fi
-            else
-              echo "❌ FAIL: No resize detection found in logs"
-              echo "📋 Checking deploy.sh log for resize-related messages..."
-              grep -i "resize\|size\|checking if droplet" ./upgrade-test.log | head -20 || echo "No size-related messages found"
-              exit 1
-            fi
+          if [ "$ACTUAL_SIZE" = "s-1vcpu-2gb" ]; then
+            echo "✅ PASS: Droplet successfully resized to 2GB"
           else
-            echo "⚠️ WARNING: Could not retrieve deployment log"
+            echo "❌ FAIL: Droplet is still $ACTUAL_SIZE (expected s-1vcpu-2gb)"
+            echo "📋 Droplet info:"
+            doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Name,Size,Memory,Status
+            exit 1
           fi
           
           # Verify Mautic is still working after upgrade and resize
@@ -325,19 +312,6 @@ jobs:
               echo "✅ PASS: Container is running Mautic 6.0.5-apache"
             else
               echo "❌ FAIL: Container is not running expected version"
-              exit 1
-            fi
-            
-            # Verify droplet was actually resized
-            echo "🔍 Verifying droplet size via doctl..."
-            doctl auth init --access-token "${{ secrets.DIGITALOCEAN_TOKEN }}"
-            ACTUAL_SIZE=$(doctl compute droplet get "${{ steps.test-name.outputs.test-name }}" --format Size --no-header)
-            echo "📊 Actual droplet size: $ACTUAL_SIZE"
-            
-            if [ "$ACTUAL_SIZE" = "s-1vcpu-2gb" ]; then
-              echo "✅ PASS: Droplet is now 2GB"
-            else
-              echo "❌ FAIL: Droplet is still $ACTUAL_SIZE (expected s-1vcpu-2gb)"
               exit 1
             fi
           else
